@@ -1,0 +1,10 @@
+es_host: "localhost"
+es_port: 9201
+
+data_csv_file: "./data/uat/geo_all_content_df.csv"   # cached UAT data csv (instead of re-querying all the docs)
+# data_csv_file: "./data/prod/geo_all_content_df.csv"   # cached PROD data csv (instead of re-querying all the docs)
+
+llm_model: "gpt-4-1106-preview"     # gpt-3.5-turbo-0613 or check the latest from openai
+
+
+
