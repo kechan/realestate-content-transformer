@@ -1,4 +1,4 @@
-import sys
+import sys, yaml
 
 import pandas as pd
 import argparse, logging
@@ -7,22 +7,28 @@ from datetime import datetime
 from realestate_content_transformer.data.pipeline import LocallogicContentRewriter
 from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 
+LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
+LLM = 'gpt-4-1106-preview'
+
+def load_config(yaml_config_file):
+  with open(yaml_config_file, 'r') as f:
+    return yaml.safe_load(f)
+
 def test_openai_health():
-  ll_gpt_writer = LocalLogicGPTRewriter(llm_model='gpt-3.5-turbo-0613', available_sections=['housing'], property_type=None)
+  ll_gpt_writer = LocalLogicGPTRewriter(llm_model=LIGHT_WEIGHT_LLM, available_sections=['housing'], property_type=None)
   return ll_gpt_writer.test_openai_health()
 
 
 def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None):
   # check openai health
-  # if not test_openai_health():
-  #   logging.error("OpenAI API is not healthy. Exiting...")
-  #   return
+  if not test_openai_health():
+    logging.error("OpenAI API is not healthy. Exiting...")
+    return
 
   ll_rewriter = LocallogicContentRewriter(
     es_host=es_host, 
     es_port=es_port, 
-    # llm_model='gpt-4', 
-    llm_model='gpt-4-1106-preview', 
+    llm_model=LLM,
     simple_append=True,
     archiver_filepath=archiver_file)
     # archiver_filepath=Path.home()/'tmp'/'dev_rewrites.txt')
@@ -45,13 +51,19 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
   except Exception as e:
     logging.exception("An error occurred: %s", e)
 
-def rerun_to_recover(es_host, es_port, prov_code, lang, run_num, gpt_backup_version=None):
+def rerun_to_recover(es_host, es_port, prov_code, lang, run_num, gpt_backup_version=None, archiver_file=None):
   # check openai health
-  # if not test_openai_health():
-  #   logging.error("OpenAI API is not healthy. Exiting...")
-  #   return
+  if not test_openai_health():
+    logging.error("OpenAI API is not healthy. Exiting...")
+    return
   
-  ll_rewriter = LocallogicContentRewriter(es_host=es_host, es_port=es_port, llm_model='gpt-4', simple_append=True)
+  ll_rewriter = LocallogicContentRewriter(
+    es_host=es_host, 
+    es_port=es_port, 
+    llm_model=LLM, 
+    simple_append=True,
+    archiver_filepath=archiver_file)
+
   use_rag = True
 
   try:
@@ -67,12 +79,13 @@ if __name__ == '__main__':
   # Initialize argument parser
   parser = argparse.ArgumentParser(description='Run Locallogic Content Rewriter')
 
-  # Add arguments
-  parser.add_argument('--es_host', default='localhost', help='Elasticsearch host, default is localhost')
-  parser.add_argument('--es_port', type=int, default=9201, help='Elasticsearch port, default is 9201')
+  parser.add_argument('--config', type=str, help='Path to the YAML configuration file')
+
+  parser.add_argument('--es_host', help='Elasticsearch host. Default is "localhost" if not provided.')
+  parser.add_argument('--es_port', type=int, help='Elasticsearch port. Default is 9201 if not provided.')
 
   # Creating a mutually exclusive group for prov_code and geog_id
-  group = parser.add_mutually_exclusive_group(required=True)
+  group = parser.add_mutually_exclusive_group(required=False)
 
   group.add_argument('--prov_code', type=str, choices=["AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU", "ON", "PE", "QC", "SK", "YT"], 
                     help='Optional province code. Either prov_code or geog_id is required.')
@@ -81,28 +94,46 @@ if __name__ == '__main__':
                     help='Optional geographic ID to process a specific location. If not provided, the script processes the entire province.')
 
 
-  parser.add_argument('--lang', default='en', choices=['en', 'fr'], help='Language, default is en')
-  parser.add_argument('--log_level', default='ERROR', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET'], help='Logging Level, default is ERROR')
+  parser.add_argument('--lang', choices=['en', 'fr'], help='Language, Default is "en" if not provided.')
+  parser.add_argument('--log_level', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET'], help='Logging Level, default is ERROR')
 
   parser.add_argument('--rerun', action='store_true', help='Flag to launch rerun & recovery')
   parser.add_argument('--run_num', type=int, help='The rerun number, only relevant if --rerun is true')
 
-  parser.add_argument('--archiver_file', default='.', type=str, help='The filepath to the archiver file')
-  parser.add_argument('--gpt_backup_version', type=str, default=None, help='The version of records in archiver_file to use for recovery if available')
+  parser.add_argument('--archiver_file', type=str, help='The filepath to the archiver file. Default is "./archive_rewrites.txt" if not provided.')
+  parser.add_argument('--gpt_backup_version', type=str, help='The version of records in archiver_file to use for recovery if available')
 
   args = parser.parse_args()
-  es_host = args.es_host
-  es_port = args.es_port
-  prov_code = args.prov_code
-  geog_id = args.geog_id
-  lang = args.lang
-  log_level = args.log_level
+  # Load YAML config if provided
+  config = {}
+  if args.config:
+      config = load_config(args.config)
 
-  rerun = args.rerun
-  run_num = args.run_num
+  # Use values from config as defaults, overridden by command line arguments
+  es_host = args.es_host if args.es_host is not None else config.get('es_host', 'localhost')
+  es_port = args.es_port if args.es_port is not None else config.get('es_port', 9201)
 
-  archiver_file = args.archiver_file
-  gpt_backup_version = args.gpt_backup_version
+  # For prov_code and geog_id, since they are mutually exclusive,
+  # check if they are provided in command line args or YAML config
+
+  prov_code = args.prov_code if args.prov_code is not None else config.get('prov_code')
+  geog_id = args.geog_id if args.geog_id is not None else config.get('geog_id')
+
+  if not (prov_code or geog_id):
+    raise ValueError("Either --prov_code or --geog_id must be provided.")
+
+  # Ensure only one of prov_code or geog_id is provided
+  # if prov_code and geog_id:
+  #   raise ValueError("Only one of prov_code or geog_id should be provided.")
+
+  lang = args.lang if args.lang is not None else config.get('lang', 'en')
+  log_level = args.log_level if args.log_level is not None else config.get('log_level', 'ERROR')
+
+  rerun = args.rerun if args.rerun is not None else config.get('rerun', False)
+  run_num = args.run_num if args.run_num is not None else config.get('run_num')
+
+  archiver_file = args.archiver_file if args.archiver_file is not None else config.get('archiver_file', './archive_rewrites.txt')
+  gpt_backup_version = args.gpt_backup_version if args.gpt_backup_version is not None else config.get('gpt_backup_version')
 
   if geog_id is not None and rerun:
     print("Cannot invoke rerun & recovery for a specific location. Exiting...")
@@ -192,5 +223,12 @@ if __name__ == '__main__':
         format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s'  # Log format
     )
 
-    rerun_to_recover(es_host=es_host, es_port=es_port, prov_code=prov_code, lang=lang, run_num=run_num, gpt_backup_version=gpt_backup_version)
+    rerun_to_recover(
+      es_host=es_host, es_port=es_port, 
+      prov_code=prov_code, 
+      lang=lang, 
+      run_num=run_num, 
+      gpt_backup_version=gpt_backup_version, 
+      archiver_file=archiver_file
+    )
 

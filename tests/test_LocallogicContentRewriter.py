@@ -1,4 +1,4 @@
-import unittest, logging, os, yaml, difflib, re
+import unittest, logging, os, yaml, difflib, re, tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -8,6 +8,7 @@ from realestate_content_transformer.data.pipeline import LocallogicContentRewrit
 from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 
 from realestate_content_transformer.utils.misc import num_tokens_from_string
+from realestate_content_transformer.data.archive import ChatGPTRewriteArchiver, ArchiveStorageType
 
 # logging.basicConfig(level=logging.INFO)  # This will log messages of level INFO and above
 logging.basicConfig(
@@ -43,12 +44,14 @@ class TestLocallogicContentRewriter(unittest.TestCase):
 
         self.llm_model = config['llm_model']
 
+      self.archiver_filepath = 'unittest_rewrites.txt'
       self.ll_rewriter = LocallogicContentRewriter(
-                                                    es_host=es_host, 
-                                                    es_port=es_port, 
-                                                    llm_model='gpt-4-1106-preview', 
-                                                    simple_append=True,
-                                                    archiver_filepath='unittest_rewrites.txt')
+                                                  es_host=es_host, 
+                                                  es_port=es_port, 
+                                                  llm_model='gpt-4-1106-preview', 
+                                                  simple_append=True,
+                                                  archiver_filepath=self.archiver_filepath)
+
       # print(f'property types: {self.ll_rewriter.property_types}')
       self.using_cache_data = False
       if Path(data_csv_file).exists():
@@ -99,7 +102,7 @@ class TestLocallogicContentRewriter(unittest.TestCase):
   
   
   def test_rewrite_cities_by_geog_id(self):
-    longId = 'pe_lot-31'
+    longId = 'pe_souris'
     geog_id = self.ll_rewriter.longId_to_geog_id_dict[longId]
 
     try:
@@ -114,6 +117,7 @@ class TestLocallogicContentRewriter(unittest.TestCase):
       rewritten_housing = geo_override_doc['overrides_en']['data']['profiles']['housing']
 
       # check if rewritten housing is housing + " The average price of an MLS® real estate listing"
+      # TODO: what if there's no listing for the entire city?
       diff_texts = list(difflib.ndiff(housing, rewritten_housing))
       additional_text = ''.join([line[2:] for line in diff_texts if line.startswith("+ ")])
       self.assertTrue('The average price of an MLS® real estate listing in' in additional_text)
@@ -292,14 +296,15 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     city = sample_df.city.values[0]
 
     property_type = 'INVESTMENT'
-    avg_price, pct = self.ll_rewriter.get_avg_price_and_active_pct(prov_code=prov_code, city=city, property_type=property_type)
+    avg_price, pct, count = self.ll_rewriter.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
     print(f'avg_price: {avg_price}, pct: {pct}')
 
     self.assertEqual(avg_price, 0.0)
-    self.assertEqual(pct, 0.0)
+    self.assertTrue(pct < 0.0)
+    self.assertEqual(count, 0)
     
     try:
-      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='uat')   # testing with no GPT
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='mock')   # testing with no GPT
       geo_override_doc = self.ll_rewriter.es_client.get(index=self.ll_rewriter.geo_overrides_index_name, id=longId)['_source']
 
       version = geo_override_doc['overrides_investment_en']['data']['version']
@@ -316,30 +321,31 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     except Exception as e:
       self.fail(f"longId: {longId}, geog_id: {geog_id}, test failed with exception: {e}")
 
-  def test_with_params_rewrite(self):
-    longId = 'pe_lot-31'   # has LUXURY listings
+  def test_with_avg_price_pct_rewrite(self):
+    longId = 'pe_north-rustico'   # has semi listings
     query = f"longId=='{longId}'"
     sample_df = self.sample(query)
     geog_id = sample_df.geog_id.values[0]
     prov_code = sample_df.province.values[0]
     city = sample_df.city.values[0]
 
-    property_type = 'LUXURY'
-    avg_price, pct = self.ll_rewriter.get_avg_price_and_active_pct(prov_code=prov_code, city=city, property_type=property_type)
-    print(f'avg_price: {avg_price}, pct: {pct}')
+    property_type = 'SEMI-DETACHED'
+    avg_price, pct, count = self.ll_rewriter.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
+    print(f'avg_price: {avg_price}, pct: {pct}, count: {count}')
 
+    # confirm precondition before testing
     self.assertGreater(avg_price, 0.0)
     self.assertGreater(pct, 0.0)
 
     try:
-      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='uat')   # testing with no GPT
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='mock')   # testing with no GPT
       geo_override_doc = self.ll_rewriter.es_client.get(index=self.ll_rewriter.geo_overrides_index_name, id=longId)['_source']
 
-      version = geo_override_doc['overrides_luxury_en']['data']['version']
+      version = geo_override_doc['overrides_semi_detached_en']['data']['version']
       self.assertEqual(version, self.ll_rewriter.version_string)
 
       housing = geo_override_doc['overrides_en']['data']['profiles']['housing']
-      rewritten_housing = geo_override_doc['overrides_luxury_en']['data']['profiles']['housing']
+      rewritten_housing = geo_override_doc['overrides_semi_detached_en']['data']['profiles']['housing']
 
       # print(f'housing: {housing}')
       # print(f'rewritten_housing: {rewritten_housing}')
@@ -349,13 +355,50 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     except Exception as e:
       self.fail(f"longId: {longId}, geog_id: {geog_id}, test failed with exception: {e}")
 
+
+  def test_with_neg_pct_rewrite(self):
+    """
+    Test the case where the count of listings for the property type < 10 such that the pct is negative.
+    The negative value indicate we skip providing % of active listings to the prompt    
+    """
+    longId = 'pe_linkletter'
+    query = f"longId=='{longId}'"
+    sample_df = self.sample(query)
+    geog_id = sample_df.geog_id.values[0]
+    prov_code = sample_df.province.values[0]
+    city = sample_df.city.values[0]
+
+    property_type = 'SEMI-DETACHED'
+    avg_price, pct, count = self.ll_rewriter.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
+    print(f'avg_price: {avg_price}, pct: {pct}, count: {count}')
+
+    # confirm precondition before testing
+    self.assertGreater(avg_price, 0.0)
+    self.assertLess(pct, 0.0)
+
+    try:
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='mock')   # testing with no GPT
+      geo_override_doc = self.ll_rewriter.es_client.get(index=self.ll_rewriter.geo_overrides_index_name, id=longId)['_source']
+
+      version = geo_override_doc['overrides_semi_detached_en']['data']['version']
+      self.assertEqual(version, self.ll_rewriter.version_string)
+
+      housing = geo_override_doc['overrides_en']['data']['profiles']['housing']
+      rewritten_housing = geo_override_doc['overrides_semi_detached_en']['data']['profiles']['housing']
+
+      self.assertTrue(f'Too few listings' in rewritten_housing)
+
+    except Exception as e:
+      self.fail(f"longId: {longId}, geog_id: {geog_id}, test failed with exception: {e}")
+
+
   def test_error_and_recovery(self):
-    longId = 'pe_lot-31'
+    longId = 'pe_north-rustico'
     geog_id = self.ll_rewriter.longId_to_geog_id_dict[longId]
 
     # run with rewrite_property_types first, this generates rewrites without the "recovered" marker
     for property_type in self.ll_rewriter.property_types:
-      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='uat') 
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='mock') 
 
     # we will mock an error by erasing the city attribute from the dataframe for this longId
     # which should trigger an error during call to self.ll_rewriter.rewrite_cities
@@ -372,7 +415,24 @@ class TestLocallogicContentRewriter(unittest.TestCase):
       self.ll_rewriter.geo_all_content_df.loc[self.ll_rewriter.geo_all_content_df.longId==longId, 'city'] = orig_city
 
     # rerun to recover
-    self.ll_rewriter.rerun_to_recover(log_filename='TestLocallogicContentRewriter.log', gpt_backup_version='testing', mode='uat')
+    # we will first taint the content of the archive file so we know the recovery is utilizing it
+
+    with open(self.archiver_filepath, 'r') as f:
+      file_contents = f.read()
+    file_contents = file_contents.replace('[REPEAT housing]', '[REPEAT housing recovered]')
+    pattern = r"'version': '\d{8}'"
+    replacement = "'version': 'testing'"   
+    file_contents = re.sub(pattern, replacement, file_contents)
+    pattern = r":\d{8}\|\|"
+    replacement = ":testing||"
+    file_contents = re.sub(pattern, replacement, file_contents)
+    with open(self.archiver_filepath, 'w') as f:
+      f.write(file_contents)
+
+    self.ll_rewriter.rerun_to_recover(
+      log_filename='TestLocallogicContentRewriter.log', 
+      gpt_backup_version='test',     # should also match testing
+      mode='mock')
 
     # check if the recovered rewrites are present
     geo_override_doc = self.ll_rewriter.es_client.get(index=self.ll_rewriter.geo_overrides_index_name, id=longId)['_source']
@@ -382,6 +442,51 @@ class TestLocallogicContentRewriter(unittest.TestCase):
         # print(k, v)
         # print('------------------')
         self.assertTrue(v['data']['profiles']['housing'].startswith('[REPEAT housing recovered]'))
+
+    # we should clean up by deleting the archive file
+    os.remove(self.archiver_filepath)
+
+  
+  def test_archiving(self):
+    # Create a temporary file
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_file_path = temp_file.name
+    temp_file.close()
+
+    try:
+      archiver = ChatGPTRewriteArchiver(ArchiveStorageType.PLAIN_TEXT, file_path=temp_file_path)
+
+      # Add some records
+      archiver.add_record(longId="test1", property_type="LUXURY", version="20231230",
+                          user_prompt="prompt1", chatgpt_response="response1")
+      archiver.add_record(longId="test2", property_type="CONDO", version="20231215",
+                          user_prompt="prompt2", chatgpt_response="response2")
+
+      # Retrieve records with exact version match
+      record_exact = archiver.get_record(longId="test1", property_type="LUXURY", version="20231230")
+      self.assertIsNotNone(record_exact)
+      self.assertEqual(record_exact['chatgpt_response'], "response1")
+
+      # Retrieve records with version prefix match
+      record_prefix = archiver.get_record(longId="test2", property_type="CONDO", version="202312")
+      self.assertIsNotNone(record_prefix)
+      self.assertEqual(record_prefix['chatgpt_response'], "response2")
+
+      # Test get_all_records
+      all_records = archiver.get_all_records(return_df=False)
+      self.assertIsInstance(all_records, dict)
+      self.assertIn('test1:LUXURY:20231230', all_records)
+      self.assertIn('test2:CONDO:20231215', all_records)
+      self.assertEqual(all_records['test1:LUXURY:20231230']['chatgpt_response'], 'response1')
+      self.assertEqual(all_records['test2:CONDO:20231215']['chatgpt_response'], 'response2')
+
+      # Negative test: Try to get a non-existent record
+      non_existent_record = archiver.get_record(longId="nonexistent", property_type="UNKNOWN", version="20991231")
+      self.assertIsNone(non_existent_record)
+
+    finally:
+      # clean up 
+      os.remove(temp_file_path)
 
 
   def sample(self, query: str, n_sample=1) -> pd.DataFrame:

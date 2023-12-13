@@ -868,7 +868,7 @@ class LocallogicContentRewriter:
         params_dict = None
         gpt_writer = non_property_type_gpt_writer
 
-    if mode == 'uat':   # For testing purpose and will not use GPT.
+    if mode == 'mock':   # For testing purpose and will not use GPT.
       avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
       if avg_price > 1.0:
         rewritten_housing = f"[REPEAT housing] The average price of an MLS® real estate {property_type} listing in {city} is $ {int(avg_price)}."
@@ -881,8 +881,10 @@ class LocallogicContentRewriter:
 
       rewrites = {'housing': rewritten_housing}
       rewrites['error_message'] = None
-    else:
+    elif mode == 'prod':
       rewrites = gpt_writer.rewrite(params_dict=params_dict, use_rag=use_rag, housing=housing)
+    else:
+      raise ValueError(f"Invalid mode: {mode}")
 
     if self.archiver:
       messages = gpt_writer.construct_openai_user_prompt(params_dict=params_dict, use_rag=use_rag, housing=housing)

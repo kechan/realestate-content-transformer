@@ -58,29 +58,46 @@ class ChatGPTRewriteArchiver:
 
   def get_record(self, longId: str, property_type: str, version: str) -> Optional[Dict[str, str]]:
     '''
-    Returns a dictionary containing the record for the given longId, property_type, and version.
+    # TODO: Implement a more robust method for determining the latest record when querying by version prefix.
+    # Current implementation assumes the last record encountered in the dataset is the latest one, which might not 
+    # always be accurate. This could lead to inconsistent results, especially if the dataset isn't strictly 
+    # chronological. Consider adding logic to parse and compare date strings accurately to ensure the truly latest 
+    # record is returned. This is particularly important for Redis storage, where the order of keys might not 
+    # reflect their chronological order. For the plain text storage, while the last line is likely to be the latest, 
+    # it's not guaranteed. A more reliable approach would be to convert date strings to datetime objects for 
+    # comparison, or ensure that records are stored in a manner that maintains their chronological order.
 
+    Returns a dictionary containing the records for the given longId, property_type, and version.
+
+    The version can be a full date string (e.g., '20231230') or a year-month prefix (e.g., '202312').
     Or None if not found.
     '''
-    key = f"rewrite:{longId}:{property_type}:{version}"
+    # records = {}
+    record = None
+    version_regex = re.compile(f"^{re.escape(version)}")
+
+    # key = f"rewrite:{longId}:{property_type}:{version}"
     if self.storage_type == ArchiveStorageType.REDIS:
-      return self.db.hgetall(key)
+      pattern = f"rewrite:{longId}:{property_type}:{version}*"
+      keys = self.db.keys(pattern)
+      for key in keys:
+        record = self.db.hgetall(key)
+        # records[key] = record
+
     elif self.storage_type == ArchiveStorageType.PLAIN_TEXT:
-      regex = re.compile(f"^{re.escape(key)}\\|\\|\s*(.+)$")
+      key_prefix = f"rewrite:{longId}:{property_type}:"
       with open(self.file_path, 'r') as f:
         for line in f:
-          match = regex.match(line)
-          if match:
-            record_str = match.group(1)
-            # Assuming the record string is in a valid dictionary format
-            try:
-              record_dict = ast.literal_eval(record_str)
-              return record_dict
-            except (SyntaxError, ValueError) as e:
-              print(f"Error parsing the record string: {e}", file=sys.stderr)
-              raise e
-    else:
-      return None
+            if line.startswith(key_prefix):
+              key, sep, record_str = line.partition('||')
+              if sep and version_regex.match(key.split(':', 3)[-1]):
+                try:
+                  record = ast.literal_eval(record_str.strip())
+                  # records[key] = record_dict
+                except (SyntaxError, ValueError) as e:
+                  print(f"Error parsing the record string: {e}", file=sys.stderr)
+
+    return record if record else None
 
   def remove_record(self, longId: str, property_type: str, version: str) -> None:
     key = f"rewrite:{longId}:{property_type}:{version}"
@@ -117,7 +134,7 @@ class ChatGPTRewriteArchiver:
       df.reset_index(inplace=True)
       df[['longId', 'property_type', 'version']] = df['index'].str.split(':', expand=True)
       df.drop(columns=['index'], inplace=True)
-      
+
       df = df[['longId', 'property_type', 'version', 'user_prompt', 'chatgpt_response']]
       return df
 
