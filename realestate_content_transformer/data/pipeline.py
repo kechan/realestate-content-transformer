@@ -1512,7 +1512,7 @@ class LocallogicContentRewriter:
     province
     PE	  112	66	56	56	56	56	
 
-    filtered by version. If not provided, then all versions are included.
+    filtered by version. The version is either an exact match, or prefix match (startswith). If not provided, then all versions are included.
 
     '''
     # Total
@@ -1525,7 +1525,8 @@ class LocallogicContentRewriter:
     section = 'overrides_en_housing'
     if 'overrides_en_version' in self.geo_all_content_df.columns:
       if version:
-        overrides_en_housing_notnull = self.geo_all_content_df.q("overrides_en_version == @version").groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame()
+        # overrides_en_housing_notnull = self.geo_all_content_df.q("overrides_en_version == @version").groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame()
+        overrides_en_housing_notnull = self.geo_all_content_df.q("overrides_en_version.notnull() and overrides_en_version.str.startswith(@version)").groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame()
       else:
         overrides_en_housing_notnull = self.geo_all_content_df.groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame()
     else:
@@ -1538,7 +1539,8 @@ class LocallogicContentRewriter:
       section = f'overrides_{property_type}_en_housing'
       if f'overrides_{property_type}_en_version' in self.geo_all_content_df.columns:
         if version:
-          report_df.append(self.geo_all_content_df.q(f"overrides_{property_type}_en_version == @version").groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame())
+          # report_df.append(self.geo_all_content_df.q(f"overrides_{property_type}_en_version == @version").groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame())
+          report_df.append(self.geo_all_content_df.q(f"overrides_{property_type}_en_version.notnull() and overrides_{property_type}_en_version.str.startswith(@version)").groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame())
         else:
           report_df.append(self.geo_all_content_df.groupby('province', group_keys=True)[section].apply(lambda x: x.notnull().sum()).to_frame())
       else:
