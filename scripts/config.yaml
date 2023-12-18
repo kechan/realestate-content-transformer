@@ -12,8 +12,8 @@ log_level: ERROR           # Logging Level, default is ERROR
 # Recovery mode settings (used with --rerun)
 # Uncomment and set appropriately when in recovery mode.
 # run_num: 1               # The rerun number, only relevant if --rerun is true
-# gpt_backup_version: "version_string" # The version of records in archiver_file for recovery
+# gpt_backup_version: "202312" # The version of records in archiver_file for recovery
 
 #archiver_file: ./archive_rewrites.txt     # Filepath to the archiver file
-archiver_file: /Users/kechan/tmp/archive_rewrites.txt     # for local testing
+archiver_file: /Users/tester/tmp/archive_rewrites.txt     # for local testing
 

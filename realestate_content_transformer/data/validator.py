@@ -20,13 +20,15 @@ class RewriteValidator:
     geo_all_content_df = self.ll_rewriter.geo_all_content_df
 
     # Looking at housing for lang='en' for now.
-    geo_all_content_df[['geog_id', 'longId', 'citySlug', 'en_housing', 'overrides_en_housing']]  # overrides_condo_en_housing
+    geo_all_content_df.q("en_housing.notnull()")[['geog_id', 'longId', 'en_housing', 'overrides_en_housing']]
     # TODO: continue more validation here
 
     # Looking at housing for lang='en' for all property types
-    property_override_cols = [f'overrides_{property_type.lower()}_en' for property_type in property_types]
+    property_override_cols = [f"overrides_{property_type.lower().replace('-', '_')}_en_housing" for property_type in property_types]
 
-    geo_all_content_df[['geog_id', 'longId', 'citySlug', 'en_housing'] + property_override_cols]
+    for property_override_col in property_override_cols:
+      geo_all_content_df.q(f"{property_override_col}.notnull()")[['geog_id', 'longId', property_override_col]]
+
     # TODO: continue more validation here
 
     
