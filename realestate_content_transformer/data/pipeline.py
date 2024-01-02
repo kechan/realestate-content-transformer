@@ -23,6 +23,9 @@ from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 # Later enhancement
 # 1. bulk upsert (see https://chat.openai.com/share/5038f03e-313f-4cce-a0cc-f52fad739d1e)
 
+LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
+LLM = 'gpt-4-1106-preview'
+
 class BulkUpserter:
   def __init__(self, es_client: Elasticsearch, index_name: str, longId_to_geog_id_dict: Dict[str, str] = None):
     self.es_client = es_client
@@ -80,7 +83,7 @@ class BulkUpserter:
 
 
 class LocallogicContentRewriter:
-  def __init__(self, es_host, es_port=9200, llm_model='gpt-3.5-turbo-0613', simple_append=True, 
+  def __init__(self, es_host, es_port=9200, llm_model=LIGHT_WEIGHT_LLM, simple_append=True, 
                archiver_filepath: str = '.', archiver_host: str = 'localhost', archiver_port: int = 6379):
     '''
     es_host: Elasticsearch host
@@ -1045,23 +1048,25 @@ class LocallogicContentRewriter:
 
     MIN_LISTING_THRESHOLD = 10   # if total listings is less than this, we return -1 for % of active listing due to stat. robustness
 
-    base_query = {
-      "size": 0,  # We don't need to retrieve documents, only aggregate data
-      "query": {
-        "bool": {
-          "must": [
-            {"match": {"guid": geog_id}},
-            {"match": {"city": city}},
-            {"match": {"provState": prov_code}},
-            
-            {"match": {"transactionType": "SALE"}},
-            {"match": {"listingStatus": "ACTIVE"}}
-          ]
+    def create_base_query():
+      return {
+        "size": 0,  # We don't need to retrieve documents, only aggregate data
+        "query": {
+          "bool": {
+            "must": [
+              {"match": {"guid": geog_id}},
+              {"match": {"city": city}},
+              {"match": {"provState": prov_code}},
+              
+              {"match": {"transactionType": "SALE"}},
+              {"match": {"listingStatus": "ACTIVE"}}
+            ]
+          }
         }
       }
-    }
 
-    avg_price_query = copy.deepcopy(base_query)
+    # avg_price_query = copy.deepcopy(base_query)
+    avg_price_query = create_base_query()
     avg_price_query["aggs"] = {
       "average_price": {
         "avg": {
@@ -1095,7 +1100,8 @@ class LocallogicContentRewriter:
       avg_price_query['query']['bool']['must'].append({"terms": {"listingType.keyword": ["RES", "CONDO", "REC"]}})
 
     # Query for counting total listings (excluding 'COMM')
-    total_listings_query = copy.deepcopy(base_query)
+    # total_listings_query = copy.deepcopy(base_query)
+    total_listings_query = create_base_query()
     total_listings_query["query"]["bool"]["must_not"] = [
       {"term": {"listingType.keyword": "COMM"}}
     ]

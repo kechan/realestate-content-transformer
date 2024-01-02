@@ -2,6 +2,8 @@ import sys, yaml
 
 import pandas as pd
 import argparse, logging
+from logging.handlers import TimedRotatingFileHandler
+
 from pathlib import Path
 from datetime import datetime
 from realestate_content_transformer.data.pipeline import LocallogicContentRewriter
@@ -71,6 +73,16 @@ def rerun_to_recover(es_host, es_port, prov_code, lang, run_num, gpt_backup_vers
   except Exception as e:
     logging.exception("An error occurred: %s", e)
 
+def setup_logging(log_filename, log_level):
+   # Create a timed rotating file handler
+  timed_handler = TimedRotatingFileHandler(log_filename, when="D", interval=183, backupCount=2)  # Keep 2 half-yearly logs
+  formatter = logging.Formatter('%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s')
+  timed_handler.setFormatter(formatter)
+
+  # Get the root logger and set the level and handler
+  logger = logging.getLogger()
+  logger.setLevel(log_level)
+  logger.addHandler(timed_handler)
 
 
 if __name__ == '__main__':
@@ -172,14 +184,14 @@ if __name__ == '__main__':
     run_entry_df.to_csv(csv_file, index=False)
 
     # Generate the log filename using timestamp, run_number, prov_code, and lang
-
     log_filename = f'{timestamp}_run_{run_number}_{location_identifier}_{lang}.log'
 
-    logging.basicConfig(
-        filename=log_filename,
-        level=log_level,
-        format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s'  # Log format
-    )
+    # logging.basicConfig(
+    #     filename=log_filename,
+    #     level=log_level,
+    #     format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s'  # Log format
+    # )
+    setup_logging(log_filename=log_filename, log_level=log_level)
 
     main(es_host=es_host, es_port=es_port, prov_code=prov_code, geog_id=geog_id, lang=lang, archiver_file=archiver_file)
   else:

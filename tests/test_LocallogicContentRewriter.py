@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from realestate_content_transformer.data.pipeline import LocallogicContentRewriter
+from realestate_content_transformer.data.pipeline import LocallogicContentRewriter, LLM, LIGHT_WEIGHT_LLM
 from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 
 from realestate_content_transformer.utils.misc import num_tokens_from_string
@@ -48,7 +48,7 @@ class TestLocallogicContentRewriter(unittest.TestCase):
       self.ll_rewriter = LocallogicContentRewriter(
                                                   es_host=es_host, 
                                                   es_port=es_port, 
-                                                  llm_model='gpt-4-1106-preview', 
+                                                  llm_model=self.llm_model,
                                                   simple_append=True,
                                                   archiver_filepath=self.archiver_filepath)
 
@@ -100,6 +100,32 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     # verify presence of provinces
     self.assertEqual(set(self.geo_all_content_df.province.unique()), {'AB', 'BC', 'MB', 'NB', 'NL', 'NT', 'NS', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'})
   
+  def test_extact_content_single_geog_id(self):
+    geog_id = 'g30_c3nfkdtg'
+    try:
+      with open('test_config.yaml') as config_file:
+        config = yaml.safe_load(config_file)     
+        es_host = config['es_host']
+        es_port = config['es_port']
+        
+        self.llm_model = config['llm_model']
+
+      self.archiver_filepath = 'unittest_rewrites.txt'
+      ll_rewriter = LocallogicContentRewriter(
+                                                es_host=es_host,
+                                                es_port=es_port,
+                                                llm_model=self.llm_model,
+                                                simple_append=True,
+                                                archiver_filepath=self.archiver_filepath)
+
+      ll_rewriter.extract_content(geog_id=geog_id, incl_property_override=True)
+      # print(ll_rewriter.geo_all_content_df)
+
+      # ensure there's only 1 row with expected geog_id
+      self.assertEqual(ll_rewriter.geo_all_content_df.shape[0], 1)
+      self.assertEqual(ll_rewriter.geo_all_content_df.geog_id.values[0], geog_id)
+    except Exception as e:
+      logging.exception("An error occurred: %s", e)
   
   def test_rewrite_cities_by_geog_id(self):
     longId = 'pe_souris'
