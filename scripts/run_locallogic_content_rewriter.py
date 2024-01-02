@@ -2,7 +2,7 @@ import sys, yaml
 
 import pandas as pd
 import argparse, logging
-from logging.handlers import TimedRotatingFileHandler
+# from logging.handlers import TimedRotatingFileHandler
 
 from pathlib import Path
 from datetime import datetime
