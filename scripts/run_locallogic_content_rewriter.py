@@ -74,15 +74,26 @@ def rerun_to_recover(es_host, es_port, prov_code, lang, run_num, gpt_backup_vers
     logging.exception("An error occurred: %s", e)
 
 def setup_logging(log_filename, log_level):
-   # Create a timed rotating file handler
-  timed_handler = TimedRotatingFileHandler(log_filename, when="D", interval=183, backupCount=2)  # Keep 2 half-yearly logs
-  formatter = logging.Formatter('%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s')
-  timed_handler.setFormatter(formatter)
+  logging.basicConfig(
+        filename=log_filename,
+        level=log_level,
+        format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s'  # Log format
+  )
+  
+  # Note: The TimedRotatingFileHandler is commented out as it may not be needed
+  # with the current log filename structure that includes a changing run_number.
+  # If you decide to use a static log filename in the future, you can consider
+  # uncommenting and using the TimedRotatingFileHandler.
 
-  # Get the root logger and set the level and handler
-  logger = logging.getLogger()
-  logger.setLevel(log_level)
-  logger.addHandler(timed_handler)
+  # # Create a timed rotating file handler
+  # timed_handler = TimedRotatingFileHandler(log_filename, when="D", interval=183, backupCount=2)  # Keep 2 half-yearly logs
+  # formatter = logging.Formatter('%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s')
+  # timed_handler.setFormatter(formatter)
+
+  # # Get the root logger and set the level and handler
+  # logger = logging.getLogger()
+  # logger.setLevel(log_level)
+  # logger.addHandler(timed_handler)
 
 
 if __name__ == '__main__':
@@ -186,11 +197,7 @@ if __name__ == '__main__':
     # Generate the log filename using timestamp, run_number, prov_code, and lang
     log_filename = f'{timestamp}_run_{run_number}_{location_identifier}_{lang}.log'
 
-    # logging.basicConfig(
-    #     filename=log_filename,
-    #     level=log_level,
-    #     format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s'  # Log format
-    # )
+    
     setup_logging(log_filename=log_filename, log_level=log_level)
 
     main(es_host=es_host, es_port=es_port, prov_code=prov_code, geog_id=geog_id, lang=lang, archiver_file=archiver_file)
