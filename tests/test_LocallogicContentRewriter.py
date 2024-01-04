@@ -446,10 +446,10 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     with open(self.archiver_filepath, 'r') as f:
       file_contents = f.read()
     file_contents = file_contents.replace('[REPEAT housing]', '[REPEAT housing recovered]')
-    pattern = r"'version': '\d{8}'"
+    pattern = r"'version': '\d{6}'"
     replacement = "'version': 'testing'"   
     file_contents = re.sub(pattern, replacement, file_contents)
-    pattern = r":\d{8}\|\|"
+    pattern = r":\d{6}\|\|"
     replacement = ":testing||"
     file_contents = re.sub(pattern, replacement, file_contents)
     with open(self.archiver_filepath, 'w') as f:
@@ -483,31 +483,31 @@ class TestLocallogicContentRewriter(unittest.TestCase):
       archiver = ChatGPTRewriteArchiver(ArchiveStorageType.PLAIN_TEXT, file_path=temp_file_path)
 
       # Add some records
-      archiver.add_record(longId="test1", property_type="LUXURY", version="20231230",
+      archiver.add_record(longId="test1", property_type="LUXURY", version="202311",
                           user_prompt="prompt1", chatgpt_response="response1")
-      archiver.add_record(longId="test2", property_type="CONDO", version="20231215",
+      archiver.add_record(longId="test2", property_type="CONDO", version="202312",
                           user_prompt="prompt2", chatgpt_response="response2")
 
       # Retrieve records with exact version match
-      record_exact = archiver.get_record(longId="test1", property_type="LUXURY", version="20231230")
+      record_exact = archiver.get_record(longId="test1", property_type="LUXURY", version="202311")
       self.assertIsNotNone(record_exact)
       self.assertEqual(record_exact['chatgpt_response'], "response1")
 
       # Retrieve records with version prefix match
-      record_prefix = archiver.get_record(longId="test2", property_type="CONDO", version="202312")
+      record_prefix = archiver.get_record(longId="test2", property_type="CONDO", version="2023")
       self.assertIsNotNone(record_prefix)
       self.assertEqual(record_prefix['chatgpt_response'], "response2")
 
       # Test get_all_records
       all_records = archiver.get_all_records(return_df=False)
       self.assertIsInstance(all_records, dict)
-      self.assertIn('test1:LUXURY:20231230', all_records)
-      self.assertIn('test2:CONDO:20231215', all_records)
-      self.assertEqual(all_records['test1:LUXURY:20231230']['chatgpt_response'], 'response1')
-      self.assertEqual(all_records['test2:CONDO:20231215']['chatgpt_response'], 'response2')
+      self.assertIn('test1:LUXURY:202311', all_records)
+      self.assertIn('test2:CONDO:202312', all_records)
+      self.assertEqual(all_records['test1:LUXURY:202311']['chatgpt_response'], 'response1')
+      self.assertEqual(all_records['test2:CONDO:202312']['chatgpt_response'], 'response2')
 
       # Negative test: Try to get a non-existent record
-      non_existent_record = archiver.get_record(longId="nonexistent", property_type="UNKNOWN", version="20991231")
+      non_existent_record = archiver.get_record(longId="nonexistent", property_type="UNKNOWN", version="209912")
       self.assertIsNone(non_existent_record)
 
     finally:

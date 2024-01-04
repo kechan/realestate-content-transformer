@@ -1259,9 +1259,11 @@ class LocallogicContentRewriter:
   # Versioning of rewrite
   def get_current_version_string(self):
     '''
-    This version string should be used for all rewrites across all provinces. The expected frequency is 2-4 times per year
+    This version string should be used for all rewrites across all provinces. The expected frequency is quarterly, 
+    hence the version string includes the year and the month only.
     '''
-    return datetime.now().strftime("%Y%m%d")
+    # return datetime.now().strftime("%Y%m%d")
+    return datetime.now().strftime("%Y%m")
 
   # Helper methods to query ES
 
