@@ -276,7 +276,7 @@ class TestLocallogicContentRewriter(unittest.TestCase):
           # print(f'city: {city}, property_type: {property_type}')
           # print(f'housing: {housing}')
 
-          avg_price, pct = self.ll_rewriter.get_avg_price_and_active_pct(prov_code=prov_code, city=city, property_type=property_type)        
+          avg_price, pct, count = self.ll_rewriter.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)        
 
           if avg_price > 0:
             params_dict = {'Average price on MLS®': int(avg_price)}
