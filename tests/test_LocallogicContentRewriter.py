@@ -1,4 +1,4 @@
-import unittest, logging, os, yaml, difflib, re, tempfile
+import unittest, logging, os, yaml, difflib, re, tempfile, io
 from pathlib import Path
 
 import pandas as pd
@@ -55,7 +55,7 @@ class TestLocallogicContentRewriter(unittest.TestCase):
       # print(f'property types: {self.ll_rewriter.property_types}')
       self.using_cache_data = False
       if Path(data_csv_file).exists():
-        self.ll_rewriter.geo_all_content_df = pd.read_csv(data_csv_file)
+        self.ll_rewriter.geo_all_content_df = pd.read_csv(data_csv_file, dtype=str)
         self.ll_rewriter.longId_to_geog_id_dict = self.ll_rewriter.geo_all_content_df.set_index('longId')['geog_id'].to_dict()
         self.using_cache_data = True
     except Exception as e:
@@ -513,6 +513,81 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     finally:
       # clean up 
       os.remove(temp_file_path)
+
+  def test_force_rewrite(self):
+    # Setup a string stream to capture logs
+    log_stream = io.StringIO()
+    stream_handler = logging.StreamHandler(log_stream)
+    logger = logging.getLogger('LocallogicContentRewriter')  # Replace with the actual logger name used in your class
+    logger.addHandler(stream_handler)
+
+    # pick 2 geog_ids/longId that not used elsewhere in this test
+    # pe_cardigan, pe_clyde-river
+    current_version = self.ll_rewriter.version_string
+    property_type = 'LUXURY'
+    
+    # manipulate pe_cardigan luxury version to current_version, 
+    try:
+      longId = 'pe_cardigan'
+      geog_id = self.ll_rewriter.longId_to_geog_id_dict[longId]
+      idx = self.ll_rewriter.geo_all_content_df.q(f"longId=='{longId}'").index
+      orig_version_pe_cardigan = self.ll_rewriter.geo_all_content_df.loc[idx, 'overrides_en_version'].values[0]
+      self.ll_rewriter.geo_all_content_df.loc[idx, 'overrides_luxury_en_version'] = current_version
+
+      # test with force_rewrite=False, pe_cardigan is not rewritten because its up to date
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='mock')
+      log_content = log_stream.getvalue()
+      self.assertIn("Skipping rewrite", log_content, "Expected log message not found in logs")
+      log_stream.truncate(0)
+      log_stream.seek(0)
+
+      # test with force_rewrite=True, pe_cardigan is rewritten
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, force_rewrite=True, mode='mock')
+      log_content = log_stream.getvalue()
+      self.assertIn("Finished rewriting 1", log_content, "Expected log message not found in logs")
+      log_stream.truncate(0)
+      log_stream.seek(0)
+
+
+    finally: 
+      # reset to original version
+      self.ll_rewriter.geo_all_content_df.loc[idx, 'overrides_luxury_en_version'] = orig_version_pe_cardigan
+    
+
+    # manipulate pe_clyde-river version to something outdated
+    try:
+      longId = 'pe_clyde-river'
+      geog_id = self.ll_rewriter.longId_to_geog_id_dict[longId]
+      idx = self.ll_rewriter.geo_all_content_df.q(f"longId=='{longId}'").index
+      orig_version_pe_clyde_river = self.ll_rewriter.geo_all_content_df.loc[idx, 'overrides_en_version'].values[0]
+      self.ll_rewriter.geo_all_content_df.loc[idx, 'overrides_luxury_en_version'] = '202101'
+
+      # test with force_rewrite=False, pe_clyde_river is rewritten because version is outdated
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, mode='mock')
+      log_content = log_stream.getvalue()
+      self.assertIn("Finished rewriting 1", log_content, "Expected log message not found in logs")
+      log_stream.truncate(0)
+      log_stream.seek(0)
+
+      # test with force_rewrite=True, pe_clyde_river is always rewritten
+      self.ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, force_rewrite=True, mode='mock')
+      log_content = log_stream.getvalue()
+      self.assertIn("Finished rewriting 1", log_content, "Expected log message not found in logs")
+      log_stream.truncate(0)
+      log_stream.seek(0)
+    finally:
+      # reset to original version
+      self.ll_rewriter.geo_all_content_df.loc[idx, 'overrides_luxury_en_version'] = orig_version_pe_clyde_river
+
+    logger.removeHandler(stream_handler)
+    stream_handler.close()
+
+
+        
+    
+    
+
+
 
 
   def sample(self, query: str, n_sample=1) -> pd.DataFrame:

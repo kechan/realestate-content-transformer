@@ -689,14 +689,42 @@ class LocallogicContentRewriter:
     return rewrites.get('error_message') is None and es_op_succeeded    # True if everything is ok
 
 
-  def rewrite_property_types(self, property_type='CONDO', prov_code=None, geog_id=None, lang='en', use_rag=True, mode='prod'):
+  def rewrite_property_types(
+    self, 
+    property_type='CONDO', prov_code=None, geog_id=None, 
+    lang='en', use_rag=True, force_rewrite=False,
+    mode='prod'):
     """
-    loop through all cities (level 30) (or by prov_code if provided, or just one geog_id if provided) 
-    and rewrite content and customize it for a specific property type. 
+    Rewrites content for all cities (level 30). If prov_code or just one geog_id is provided, 
+    then rewrite content for those only, and a specific property type. 
     
-    Since transport, services, and character are property type agnostic, they don't need to be rewritten. 
-    The input are the override at the city level (in geo_overrides > overrides_en )
+    (Not in v1: since transport, services, and character are property type agnostic, they don't need to be rewritten.) 
+
+    Parameters:
+        property_type (str): The type of property for which to rewrite content. 
+                             Default is 'CONDO'.
+        prov_code (str): The code of the province to filter rewrites. If None, 
+                         rewrites are applied across all provinces.
+        geog_id (str): The geographic ID to filter rewrites. If None, rewrites 
+                       are applied based on prov_code or across all cities.
+        lang (str): The language in which to perform rewrites. Default is 'en' (English).
+        use_rag (bool): Flag to determine if Retriever-Augmented Generation (RAG) 
+                        should be used in the rewriting process.
+        force_rewrite (bool): If True, bypasses version checking and forces rewriting 
+                              of content regardless of its current version. 
+                              If False, only rewrites content with versions 
+                              different from the current target version.
+        mode (str): The mode of operation. Can be 'prod' for production or other 
+                    values for different operational modes (e.g. 'mock' for testing).
+
+    The method utilizes a LocalLogicGPTRewriter for generating rewritten content 
+    and applies version control to manage content updates. The version checking 
+    mechanism ensures that only outdated content is rewritten, enhancing efficiency. 
+    The force_rewrite parameter provides flexibility for scenarios where selective 
+    or complete rewrites are necessary, such as during recovery processes or 
+    in cases where version integrity needs to be re-established.                    
     """
+
     property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],    # transport, services and character are not property type specific
                                         property_type=property_type)
@@ -717,6 +745,17 @@ class LocallogicContentRewriter:
         longId = row.longId
         city = row.city
         province = row.province
+
+        if not force_rewrite:
+          # Construct the version column name based on the property type
+          version_col = f'overrides_{property_type.lower().replace("-", "_")}_{lang}_version'
+          doc_version = row.get(version_col)
+
+          if doc_version == self.version_string:
+            # this is such that if this method is rerun, only docs that are not at target_version will be rewritten,
+            # which can happen due to failures/errors.
+            self.log_info(f'[rewrite_property_types] Skipping rewrite for geog_id {geog_id} as it is already at version {self.version_string}.')
+            continue
 
         housing = row.get(f'{lang}_housing', None)
 
@@ -826,6 +865,7 @@ class LocallogicContentRewriter:
     Given a geog_id, longId, city, and section_contents, rewrite the content and update the geo_overrides_index_name index keyed by longId.
     Return: a bool to indicate if rewrite is successful or not.
     """
+
     def get_content(override, original):
       return override if override is not None else original
     
@@ -906,6 +946,7 @@ class LocallogicContentRewriter:
 
 
   def update_es_doc_property_override(self, longId: str, housing_content: str, property_type: str = 'CONDO', lang='en'):
+
     property_type_lower = property_type.lower().replace('-', '_')
     update_script = {
       "script": {

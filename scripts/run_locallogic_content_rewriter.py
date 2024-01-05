@@ -38,7 +38,7 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
   use_rag = True  # this is better than placeholders 1) stronger context 2) simpler realtime content retrieval
 
   try:
-    ll_rewriter.extract_content(prov_code=prov_code, geog_id=geog_id)
+    ll_rewriter.extract_content(prov_code=prov_code, geog_id=geog_id, incl_property_override=True)
     # ll_rewriter.extract_dataclasses(prov_code=prov_code)
 
     ll_rewriter.rewrite_cities(prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
