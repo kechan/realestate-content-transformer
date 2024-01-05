@@ -3,6 +3,7 @@ from typing import Optional, Dict, Union
 from enum import Enum
 import redis, json, re, ast, sys
 import pandas as pd
+from pathlib import Path
 
 class ArchiveStorageType(Enum):
   REDIS = 1
@@ -17,6 +18,15 @@ class ChatGPTRewriteArchiver:
       if file_path is None:
         raise ValueError("file_path is required if storage_type is PLAIN_TEXT.")
       self.file_path = file_path
+
+    # check if file_path exists for PLAIN_TEXT
+    if self.storage_type == ArchiveStorageType.PLAIN_TEXT:
+      if not Path(self.file_path).exists():
+        # create file if not exists
+        with open(self.file_path, 'w') as f:
+          pass
+
+    self.cached_df = self.get_all_records(return_df=True)
 
   def ping(self) -> str:
     if self.storage_type == ArchiveStorageType.REDIS:
@@ -56,7 +66,7 @@ class ChatGPTRewriteArchiver:
     else:
       raise KeyError("Record not found.")
 
-  def get_record(self, longId: str, property_type: str, version: str) -> Optional[Dict[str, str]]:
+  def get_record(self, longId: str, property_type: str, version: str, use_cache=False) -> Optional[Dict[str, str]]:
     '''
     # TODO: Implement a more robust method for determining the latest record when querying by version prefix.
     # Current implementation assumes the last record encountered in the dataset is the latest one, which might not 
@@ -85,19 +95,26 @@ class ChatGPTRewriteArchiver:
         # records[key] = record
 
     elif self.storage_type == ArchiveStorageType.PLAIN_TEXT:
-      key_prefix = f"rewrite:{longId}:{property_type}:"
-      with open(self.file_path, 'r') as f:
-        for line in f:
-            if line.startswith(key_prefix):
-              key, sep, record_str = line.partition('||')
-              if sep and version_regex.match(key.split(':', 3)[-1]):
-                try:
-                  record = ast.literal_eval(record_str.strip())
-                  # records[key] = record_dict
-                except (SyntaxError, ValueError) as e:
-                  print(f"Error parsing the record string: {e}", file=sys.stderr)
+      if use_cache:
+        if self.cached_df is not None and len(self.cached_df) > 0:
+          return self.cached_df.q(f"longId == '{longId}' and property_type == '{property_type}' and version == '{version}'").iloc[-1].to_dict()
+        else:
+          return None
 
-    return record if record else None
+      else:
+        key_prefix = f"rewrite:{longId}:{property_type}:"
+        with open(self.file_path, 'r') as f:
+          for line in f:
+              if line.startswith(key_prefix):
+                key, sep, record_str = line.partition('||')
+                if sep and version_regex.match(key.split(':', 3)[-1]):
+                  try:
+                    record = ast.literal_eval(record_str.strip())
+                    # records[key] = record_dict
+                  except (SyntaxError, ValueError) as e:
+                    print(f"Error parsing the record string: {e}", file=sys.stderr)
+
+      return record if record else None
 
   def remove_record(self, longId: str, property_type: str, version: str) -> None:
     key = f"rewrite:{longId}:{property_type}:{version}"
@@ -132,10 +149,11 @@ class ChatGPTRewriteArchiver:
     if return_df:
       df = pd.DataFrame.from_dict(records, orient='index')
       df.reset_index(inplace=True)
-      df[['longId', 'property_type', 'version']] = df['index'].str.split(':', expand=True)
-      df.drop(columns=['index'], inplace=True)
+      if len(df) > 0:
+        df[['longId', 'property_type', 'version']] = df['index'].str.split(':', expand=True)
+        df.drop(columns=['index'], inplace=True)
+        df = df[['longId', 'property_type', 'version', 'user_prompt', 'chatgpt_response']]
 
-      df = df[['longId', 'property_type', 'version', 'user_prompt', 'chatgpt_response']]
       return df
 
     return records

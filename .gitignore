@@ -166,3 +166,4 @@ cython_debug/
 tests/data
 tests/unittest_rewrites.txt
 tests/*token_count*.csv
+tests/unittest_recovery_rewrites.txt

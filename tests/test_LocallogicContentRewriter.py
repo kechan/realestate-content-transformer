@@ -1,4 +1,4 @@
-import unittest, logging, os, yaml, difflib, re, tempfile, io
+import unittest, logging, os, yaml, difflib, re, tempfile, io, gc
 from pathlib import Path
 
 import pandas as pd
@@ -33,8 +33,14 @@ logger = logging.getLogger(__name__)
 class TestLocallogicContentRewriter(unittest.TestCase):
 
   def setUp(self):
-    # es_host = os.environ.get('ES_HOST')
-    # es_port = os.environ.get('ES_PORT')
+    try:
+      self.ll_rewriter = self._get_ll_rewriter_instance()
+    except Exception as e:
+      logging.exception("An error occurred: %s", e)
+
+    return 
+  
+  def _get_ll_rewriter_instance(self, archiver_filepath=None) -> LocallogicContentRewriter:
     try:
       with open('test_config.yaml') as config_file:
         config = yaml.safe_load(config_file)     # TODO: Add sensible defaults later in production
@@ -42,26 +48,28 @@ class TestLocallogicContentRewriter(unittest.TestCase):
         es_port = config['es_port']
         data_csv_file = config['data_csv_file']
 
-        self.llm_model = config['llm_model']
+        llm_model = config['llm_model']
 
-      self.archiver_filepath = 'unittest_rewrites.txt'
-      self.ll_rewriter = LocallogicContentRewriter(
-                                                  es_host=es_host, 
-                                                  es_port=es_port, 
-                                                  llm_model=self.llm_model,
-                                                  simple_append=True,
-                                                  archiver_filepath=self.archiver_filepath)
+      if archiver_filepath is None:
+        archiver_filepath = 'unittest_rewrites.txt'
 
-      # print(f'property types: {self.ll_rewriter.property_types}')
+      ll_rewriter = LocallogicContentRewriter(
+                                              es_host=es_host, 
+                                              es_port=es_port, 
+                                              llm_model=llm_model,
+                                              simple_append=True,
+                                              archiver_filepath=archiver_filepath)
+  
       self.using_cache_data = False
       if Path(data_csv_file).exists():
-        self.ll_rewriter.geo_all_content_df = pd.read_csv(data_csv_file, dtype=str)
-        self.ll_rewriter.longId_to_geog_id_dict = self.ll_rewriter.geo_all_content_df.set_index('longId')['geog_id'].to_dict()
+        ll_rewriter.geo_all_content_df = pd.read_csv(data_csv_file, dtype=str)
+        ll_rewriter.longId_to_geog_id_dict = ll_rewriter.geo_all_content_df.set_index('longId')['geog_id'].to_dict()
         self.using_cache_data = True
+
+      return ll_rewriter
+
     except Exception as e:
       logging.exception("An error occurred: %s", e)
-
-    return 
 
   def test_or_setup_extract_all_context(self):
     data_csv_file = './data/uat/geo_all_content_df.csv'
@@ -199,12 +207,12 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     property_types = self.ll_rewriter.property_types   # property type of None == 'city level'
 
     # create a city level writer to handle no params
-    non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
+    non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.ll_rewriter.llm_model,
                                                           available_sections=['housing'],
                                                           property_type=None)
 
     for property_type in property_types:
-      property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model, 
+      property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.ll_rewriter.llm_model, 
                                                         available_sections=['housing'], # transport, services and character are not property type specific
                                                         property_type=property_type)
 
@@ -417,8 +425,8 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     except Exception as e:
       self.fail(f"longId: {longId}, geog_id: {geog_id}, test failed with exception: {e}")
 
-
-  def test_error_and_recovery(self):
+  @unittest.skip("Shouldnt be used")
+  def test_error_and_recovery_obsolete(self):
     longId = 'pe_north-rustico'
     geog_id = self.ll_rewriter.longId_to_geog_id_dict[longId]
 
@@ -472,7 +480,38 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     # we should clean up by deleting the archive file
     os.remove(self.archiver_filepath)
 
-  
+  # '''
+  def test_error_and_recovery(self):
+    try:
+      # Setup a string stream to capture logs
+      log_stream = io.StringIO()
+      stream_handler = logging.StreamHandler(log_stream)
+      logger = logging.getLogger('LocallogicContentRewriter')  # Replace with the actual logger name used in your class
+      logger.addHandler(stream_handler)
+
+      # we will not be using the global self.ll_rewriter since we need a separate archive file to test the recovery aspect of
+      # this test.
+      local_ll_rewriter = self._get_ll_rewriter_instance(archiver_filepath='unittest_recovery_rewrites.txt')
+
+      longId = 'pe_north-rustico'
+      geog_id = local_ll_rewriter.longId_to_geog_id_dict[longId]
+
+      for property_type in self.ll_rewriter.property_types:
+        local_ll_rewriter.rewrite_property_types(property_type=property_type, geog_id=geog_id, force_rewrite=True, mode='mock') 
+        log_content = log_stream.getvalue()
+        self.assertIn("Found archived rewrite for", log_content, f"Expected log message not found in logs. Ensure unittest_recovery_rewrites.txt has archive for {longId}")
+        log_stream.truncate(0)
+        log_stream.seek(0)
+    finally:
+
+      del local_ll_rewriter
+      gc.collect()
+
+      logger.removeHandler(stream_handler)
+      stream_handler.close()
+
+  # '''
+
   def test_archiving(self):
     # Create a temporary file
     temp_file = tempfile.NamedTemporaryFile(delete=False)
@@ -552,7 +591,6 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     finally: 
       # reset to original version
       self.ll_rewriter.geo_all_content_df.loc[idx, 'overrides_luxury_en_version'] = orig_version_pe_cardigan
-    
 
     # manipulate pe_clyde-river version to something outdated
     try:
@@ -583,12 +621,6 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     stream_handler.close()
 
 
-        
-    
-    
-
-
-
 
   def sample(self, query: str, n_sample=1) -> pd.DataFrame:
     geo_all_content_df = self.ll_rewriter.geo_all_content_df
@@ -597,6 +629,11 @@ class TestLocallogicContentRewriter(unittest.TestCase):
     else:
       sample_df = geo_all_content_df.query(query).sample(n_sample)
     return sample_df
+  
+  def tearDown(self) -> None:
+    super().tearDown() 
+    if Path(self.ll_rewriter.archiver.file_path).exists():
+      os.remove(self.ll_rewriter.archiver.file_path)
 
 def log_message(message, level="info"):
     """

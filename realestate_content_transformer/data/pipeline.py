@@ -739,6 +739,8 @@ class LocallogicContentRewriter:
     
     rewrite_count = 0
     for i, row in geo_all_content_df.iterrows():
+      if (i + 1) % 200 == 0:   #track progress
+        self.log_info(f'Processing {i+1}th geog_id for property type {property_type}')
       geog_id, longId = None, None
       try:
         geog_id = row.geog_id
@@ -862,12 +864,24 @@ class LocallogicContentRewriter:
     non_property_type_gpt_writer=None, property_type_gpt_writer=None, 
     use_rag=True, mode='prod', **section_contents) -> bool:
     """
-    Given a geog_id, longId, city, and section_contents, rewrite the content and update the geo_overrides_index_name index keyed by longId.
+    Given a geog_id, longId, city, and section_contents, rewrite the content and update the geo_overrides_index_name index 
+    keyed by longId.
+
     Return: a bool to indicate if rewrite is successful or not.
     """
 
-    def get_content(override, original):
-      return override if override is not None else original
+    # first check if GPT rewrite of the targeted version is already in archive.
+    # if found, then use it.
+    if self.archiver:
+      archived_rewrite = self.archiver.get_record(longId=longId, property_type=property_type, version=self.version_string, use_cache=True)
+      if archived_rewrite:        
+        gpt_response = archived_rewrite['chatgpt_response']
+        match = re.search(r'<housing>(.+?)</housing>', gpt_response)   # extract <housing>??</housing>
+        if match and match.group(1):
+          rewritten_housing = match.group(1)
+          es_op_succeeded = self.update_es_doc_property_override(longId=longId, housing_content=rewritten_housing, property_type=property_type, lang=lang)
+          self.log_info(f'Found archived rewrite for {longId} and version {self.version_string}.', longId=longId, geog_id=geog_id)
+          return es_op_succeeded
     
     if property_type_gpt_writer is None:
       property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,

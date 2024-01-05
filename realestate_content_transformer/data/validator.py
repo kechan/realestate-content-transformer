@@ -16,7 +16,7 @@ class RewriteValidator:
                                                  )
     
     # TODO: better manage how save_dir is done, just use local for now
-    self.ll_rewriter.extract_content(save_intermediate_results=True, save_dir=working_dir)
+    self.ll_rewriter.extract_content(save_intermediate_results=True, save_dir=working_dir/'geo_all_content_df')
 
   def validate_overrides(self):
     property_types = self.ll_rewriter.property_types
@@ -33,5 +33,8 @@ class RewriteValidator:
       geo_all_content_df.q(f"{property_override_col}.notnull()")[['geog_id', 'longId', property_override_col]]
 
     # TODO: continue more validation here
+      
+  def scratch(self):
+    pass
 
     
