@@ -21,7 +21,7 @@ def test_openai_health():
   return ll_gpt_writer.test_openai_health()
 
 
-def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None):
+def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, force_rewrite=False):
   # check openai health
   if not test_openai_health():
     logging.error("OpenAI API is not healthy. Exiting...")
@@ -42,10 +42,8 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
 
     ll_rewriter.rewrite_cities(prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
 
-    supported_property_types = ll_rewriter.property_types
-
-    for property_type in supported_property_types:
-      ll_rewriter.rewrite_property_types(property_type=property_type, prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
+    for property_type in ll_rewriter.property_types:
+      ll_rewriter.rewrite_property_types(property_type=property_type, prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag, force_rewrite=force_rewrite)
 
   except Exception as e:
     logging.exception("An error occurred: %s", e)
@@ -123,6 +121,8 @@ if __name__ == '__main__':
   parser.add_argument('--archiver_file', type=str, help='The filepath to the archiver file. Default is "./archive_rewrites.txt" if not provided.')
   parser.add_argument('--gpt_backup_version', type=str, help='The version of records in archiver_file to use for recovery if available')
 
+  parser.add_argument('--force_rewrite', type=bool, help='Force rewrite regardless of version')
+
   args = parser.parse_args()
   # Load YAML config if provided
   config = {}
@@ -155,6 +155,8 @@ if __name__ == '__main__':
   archiver_file = args.archiver_file if args.archiver_file is not None else config.get('archiver_file', './archive_rewrites.txt')
   gpt_backup_version = args.gpt_backup_version if args.gpt_backup_version is not None else config.get('gpt_backup_version')
 
+  force_rewrite = args.force_rewrite if args.force_rewrite is not None else config.get('force_rewrite', False)
+
   if geog_id is not None and rerun:
     print("Cannot invoke rerun & recovery for a specific location. Exiting...")
     sys.exit(1)
@@ -181,7 +183,7 @@ if __name__ == '__main__':
       filtered_df = run_entry_df[(run_entry_df['prov_code'] == geog_id) & (run_entry_df['lang'] == lang)]
     else:
       filtered_df = run_entry_df[(run_entry_df['prov_code'] == prov_code) & (run_entry_df['lang'] == lang)]
-      
+
     run_number = filtered_df['run_number'].max() + 1 if not filtered_df.empty else 1
     # Add the new run entry to the table
     new_entry = pd.DataFrame({
@@ -201,7 +203,7 @@ if __name__ == '__main__':
     
     setup_logging(log_filename=log_filename, log_level=log_level)
 
-    main(es_host=es_host, es_port=es_port, prov_code=prov_code, geog_id=geog_id, lang=lang, archiver_file=archiver_file)
+    main(es_host=es_host, es_port=es_port, prov_code=prov_code, geog_id=geog_id, lang=lang, archiver_file=archiver_file, force_rewrite=force_rewrite)
   else:
     if run_num is None: 
       print("Launching rerun & recovery...")

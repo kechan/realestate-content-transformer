@@ -17,3 +17,5 @@ log_level: ERROR           # Logging Level, default is ERROR
 #archiver_file: ./archive_rewrites.txt     # Filepath to the archiver file
 archiver_file: /Users/kechan/tmp/archive_rewrites.txt     # for local testing
 
+force_rewrite: false
+

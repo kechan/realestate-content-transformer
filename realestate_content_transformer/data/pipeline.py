@@ -747,7 +747,7 @@ class LocallogicContentRewriter:
         self.log_info(f'Processing {i+1}th geog_id for property type {property_type}')
 
       if self.gpt_rewrite_consecutive_failures > self.max_gpt_rewrite_consecutive_failures:
-        self.log_error(f'[rewrite_property_types] Exceeded max consecutive failures for property type {property_type}. Exiting.')
+        self.log_error(f'[rewrite_property_types] Exceeded max consecutive failures of {self.max_gpt_rewrite_consecutive_failures} for property type {property_type}. Exiting.')
         break
 
       geog_id, longId = None, None
