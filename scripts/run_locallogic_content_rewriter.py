@@ -192,7 +192,7 @@ if __name__ == '__main__':
       'prov_code': [location_identifier], 
       'lang': [lang]
     })
-    run_entry_df = run_entry_df.append(new_entry, ignore_index=True)
+    run_entry_df = pd.concat([run_entry_df, new_entry], ignore_index=True)
     
     # Save the updated table
     run_entry_df.to_csv(csv_file, index=False)
