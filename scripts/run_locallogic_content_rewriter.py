@@ -23,6 +23,8 @@ def test_openai_health():
 
 def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, force_rewrite=False):
   # check openai health
+  # will immediately exit if not healthy and log the error
+  # NOTE: within rewrite_property_types, a consecutive failure count is used to halt if there are too many consecutive failures (due mostly to openai api)
   if not test_openai_health():
     logging.error("OpenAI API is not healthy. Exiting...")
     return
