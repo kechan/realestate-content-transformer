@@ -97,7 +97,9 @@ class ChatGPTRewriteArchiver:
     elif self.storage_type == ArchiveStorageType.PLAIN_TEXT:
       if use_cache:
         if self.cached_df is not None and len(self.cached_df) > 0:
-          return self.cached_df.q(f"longId == '{longId}' and property_type == '{property_type}' and version == '{version}'").iloc[-1].to_dict()
+          filtered_df = self.cached_df.q(f"longId == '{longId}' and property_type == '{property_type}' and version == '{version}'")
+          if not filtered_df.empty:
+            return filtered_df.iloc[-1].to_dict()
         else:
           return None
 

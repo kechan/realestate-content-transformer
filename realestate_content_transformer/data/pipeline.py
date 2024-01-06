@@ -1,6 +1,6 @@
 from typing import Union, Tuple, Dict, List
 
-import time, sys, gc, random, copy
+import time, sys, gc, random, copy, traceback
 from collections import OrderedDict
 import numpy as np
 import pandas as pd
@@ -123,7 +123,11 @@ class LocallogicContentRewriter:
     # a convenience dictionary to map longId to geog_id
     self.longId_to_geog_id_dict = {}   # Dict[str, str] for {longId: geog_id} mapping
 
-    # setup archiver
+    # Designed for tracking consecutive openAI GPT completion failures
+    self.gpt_rewrite_consecutive_failures = 0
+    self.max_gpt_rewrite_consecutive_failures = 5
+
+    # Setup archiver
     # self.archiver = ChatGPTRewriteArchiver(storage_type=ArchiveStorageType.REDIS, redis_host=archiver_host, redis_port=archiver_port)
     self.archiver = ChatGPTRewriteArchiver(storage_type=ArchiveStorageType.PLAIN_TEXT, file_path=archiver_filepath)
     try: 
@@ -741,6 +745,11 @@ class LocallogicContentRewriter:
     for i, row in geo_all_content_df.iterrows():
       if (i + 1) % 200 == 0:   #track progress
         self.log_info(f'Processing {i+1}th geog_id for property type {property_type}')
+
+      if self.gpt_rewrite_consecutive_failures > self.max_gpt_rewrite_consecutive_failures:
+        self.log_error(f'[rewrite_property_types] Exceeded max consecutive failures for property type {property_type}. Exiting.')
+        break
+
       geog_id, longId = None, None
       try:
         geog_id = row.geog_id
@@ -776,10 +785,12 @@ class LocallogicContentRewriter:
         # Avoid overwhelming openai api, wait a little before moving on to the next geog_id
         time.sleep(self.wait_sec)
       except (AttributeError, KeyError) as e:
-        self.log_error(str(e) + f'|| From rewrite_property_types(...) with prov_code {prov_code}', longId=longId, geog_id=geog_id)
+        tb = traceback.format_exc()  # Get the full traceback
+        self.log_error('[rewrite_property_types] ' + str(e) + f'|| From rewrite_property_types(...) with prov_code {prov_code}\n{tb}', longId=longId, geog_id=geog_id)
         time.sleep(self.wait_sec)   # TODO consider remove this, it should have been triggered without hitting openai chat completion api.
       except Exception as e:
-        self.log_error(str(e), longId=longId, geog_id=geog_id)
+        tb = traceback.format_exc()
+        self.log_error('[rewrite_property_types] ' + str(e) + '\n' + tb, longId=longId, geog_id=geog_id)
         time.sleep(self.wait_sec)
 
       # if i > 2: break # TODO: remove this break
@@ -899,6 +910,7 @@ class LocallogicContentRewriter:
       self.log_info(f"No original locallogic housing content found for {lang}.", longId=longId, geog_id=geog_id)
       return False  # not a rewrite 
     
+    # dynamic info & metric injection (RAG is used in v1)
     if use_rag:
       avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)    
       if avg_price > 1.0:
@@ -943,6 +955,7 @@ class LocallogicContentRewriter:
     else:
       raise ValueError(f"Invalid mode: {mode}")
 
+    # archive the rewrite (so we can reuse later if there are other errors downstream)
     if self.archiver:
       messages = gpt_writer.construct_openai_user_prompt(params_dict=params_dict, use_rag=use_rag, housing=housing)
       user_prompt = messages[0]['content']
@@ -950,11 +963,14 @@ class LocallogicContentRewriter:
 
       self.archiver.add_record(longId=longId, property_type=property_type, version=self.version_string, user_prompt=user_prompt, chatgpt_response=chatgpt_response)
 
+    # ES Update or log error
     if rewrites['error_message'] is None:
       rewrites.pop('error_message', None)   # remove error_message from rewrites dict
       es_op_succeeded = self.update_es_doc_property_override(longId=longId, housing_content=rewrites['housing'], property_type=property_type, lang=lang)
+      self.gpt_rewrite_consecutive_failures = 0     # reset the counter
     else:
       self.log_error('[GPT] ' + rewrites['error_message'], longId=longId, geog_id=geog_id)
+      self.gpt_rewrite_consecutive_failures += 1
     
     return rewrites.get('error_message') is None and es_op_succeeded     # True if everything is ok
 

@@ -39,16 +39,13 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
 
   try:
     ll_rewriter.extract_content(prov_code=prov_code, geog_id=geog_id, incl_property_override=True)
-    # ll_rewriter.extract_dataclasses(prov_code=prov_code)
 
     ll_rewriter.rewrite_cities(prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
-    # ll_rewriter.rewrite_cities_using_dataclasses(simple_append=True, prov_code=prov_code, lang=lang, use_rag=True)
 
     supported_property_types = ll_rewriter.property_types
 
     for property_type in supported_property_types:
       ll_rewriter.rewrite_property_types(property_type=property_type, prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
-      # ll_rewriter.rewrite_property_types_using_dataclasses(property_type=property_type, prov_code=prov_code, lang=lang, use_rag=True)
 
   except Exception as e:
     logging.exception("An error occurred: %s", e)
@@ -180,7 +177,11 @@ if __name__ == '__main__':
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Check for the highest run_number for the given prov_code and lang
-    filtered_df = run_entry_df[(run_entry_df['prov_code'] == prov_code) & (run_entry_df['lang'] == lang)]
+    if geog_id is not None:
+      filtered_df = run_entry_df[(run_entry_df['prov_code'] == geog_id) & (run_entry_df['lang'] == lang)]
+    else:
+      filtered_df = run_entry_df[(run_entry_df['prov_code'] == prov_code) & (run_entry_df['lang'] == lang)]
+      
     run_number = filtered_df['run_number'].max() + 1 if not filtered_df.empty else 1
     # Add the new run entry to the table
     new_entry = pd.DataFrame({

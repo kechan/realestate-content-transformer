@@ -167,3 +167,6 @@ tests/data
 tests/unittest_rewrites.txt
 tests/*token_count*.csv
 tests/unittest_recovery_rewrites.txt
+
+# scripts
+scripts/run_entry_table.csv
