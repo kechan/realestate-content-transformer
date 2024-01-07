@@ -1213,7 +1213,14 @@ class LocallogicContentRewriter:
   def get_pc_of_listings_explanation(self, property_type):
     return f"Percentage of MLS® listings for {property_type.lower()} in the city."
 
-  def get_all_listings(self, prov_code) -> pd.DataFrame:
+  def get_all_listings(self, prov_code, return_df=True) -> Union[pd.DataFrame, Tuple[List[str], List[dict]]]:
+    """
+    Return all listings for a given prov_code. If return_df is True, return a DataFrame, 
+    otherwise return a tuple of doc_ids and sources.
+    
+    Only these attributes: guid, city, provState, listingType, searchCategoryType, transactionType, 
+    listingStatus, price are returned. Edit for more attributes if needed.
+    """
     count_query = {
       "query": {
         "match": {"provState": prov_code}
@@ -1228,7 +1235,7 @@ class LocallogicContentRewriter:
       "query": {
         "match": {"provState": prov_code}
       },
-      "_source": ["city", "provState", "listingType", "searchCategoryType"]
+      "_source": ["guid", "city", "provState", "listingType", "searchCategoryType", "transactionType", "listingStatus", "price"]
     }
 
     scroller = scan(self.es_client, index="rlp_listing_current", query=retrieval_query)
@@ -1240,10 +1247,13 @@ class LocallogicContentRewriter:
       doc_ids.append(doc_id)
       sources.append(source)
 
-    listing_df = pd.DataFrame(sources, index=doc_ids)
-    listing_df.index.name = 'jumpId'
+    if return_df:
+      listing_df = pd.DataFrame(sources, index=doc_ids)
+      listing_df.index.name = 'jumpId'
 
-    return listing_df      
+      return listing_df      
+    else:
+      return doc_ids, sources
     
   # Rerun and recover methods
   def rerun_to_recover(self, 
