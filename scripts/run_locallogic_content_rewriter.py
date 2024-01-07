@@ -1,4 +1,4 @@
-import sys, yaml
+import sys, yaml, time
 
 import pandas as pd
 import argparse, logging
@@ -39,16 +39,21 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
 
   use_rag = True  # this is better than placeholders 1) stronger context 2) simpler realtime content retrieval
 
+  city_rewrites_count = 0
+  property_type_rewrites_count = 0
   try:
     ll_rewriter.extract_content(prov_code=prov_code, geog_id=geog_id, incl_property_override=True)
 
-    ll_rewriter.rewrite_cities(prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
+    city_rewrites_count = ll_rewriter.rewrite_cities(prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
 
     for property_type in ll_rewriter.property_types:
-      ll_rewriter.rewrite_property_types(property_type=property_type, prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag, force_rewrite=force_rewrite)
+      property_type_rewrites_count += ll_rewriter.rewrite_property_types(property_type=property_type, prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag, force_rewrite=force_rewrite)
 
   except Exception as e:
     logging.exception("An error occurred: %s", e)
+
+  finally:
+    return city_rewrites_count + property_type_rewrites_count
 
 def rerun_to_recover(es_host, es_port, prov_code, lang, run_num, gpt_backup_version=None, archiver_file=None):
   # check openai health
@@ -187,25 +192,37 @@ if __name__ == '__main__':
       filtered_df = run_entry_df[(run_entry_df['prov_code'] == prov_code) & (run_entry_df['lang'] == lang)]
 
     run_number = filtered_df['run_number'].max() + 1 if not filtered_df.empty else 1
+
+    # Generate the log filename using timestamp, run_number, prov_code, and lang, and setup the logging config
+    log_filename = f'{timestamp}_run_{run_number}_{location_identifier}_{lang}.log'
+    setup_logging(log_filename=log_filename, log_level=log_level)
+
+    start_time = time.time()
+    rewrites_count = main(
+      es_host=es_host, es_port=es_port, 
+      prov_code=prov_code, geog_id=geog_id, 
+      lang=lang, 
+      archiver_file=archiver_file, 
+      force_rewrite=force_rewrite
+    )
+    end_time = time.time()
+    duration = (end_time - start_time) / 60   # in minutes
+    
     # Add the new run entry to the table
     new_entry = pd.DataFrame({
       'timestamp': [timestamp], 
       'run_number': [run_number], 
       'prov_code': [location_identifier], 
-      'lang': [lang]
+      'lang': [lang],
+      'duration': [duration],
+      'rewrites_count': [rewrites_count]
     })
     run_entry_df = pd.concat([run_entry_df, new_entry], ignore_index=True)
     
     # Save the updated table
     run_entry_df.to_csv(csv_file, index=False)
 
-    # Generate the log filename using timestamp, run_number, prov_code, and lang
-    log_filename = f'{timestamp}_run_{run_number}_{location_identifier}_{lang}.log'
 
-    
-    setup_logging(log_filename=log_filename, log_level=log_level)
-
-    main(es_host=es_host, es_port=es_port, prov_code=prov_code, geog_id=geog_id, lang=lang, archiver_file=archiver_file, force_rewrite=force_rewrite)
   else:
     if run_num is None: 
       print("Launching rerun & recovery...")

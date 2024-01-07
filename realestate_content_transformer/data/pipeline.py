@@ -443,7 +443,7 @@ class LocallogicContentRewriter:
     return dedup_doc_list
 
 
-  def rewrite_cities(self, prov_code=None, geog_id=None, lang='en', use_rag=True):
+  def rewrite_cities(self, prov_code=None, geog_id=None, lang='en', use_rag=True) -> int:
     """
     loop through all cities (level 30) (or by prov_code if provided) and rewrite content for each city, or
     just one geog_id if provided.
@@ -453,6 +453,8 @@ class LocallogicContentRewriter:
     LocalLogic content (in geo_details)
 
     use_rag: if True, use RAG to rewrite content, otherwise use "placeholder" style. This is relevant only if simple_append is False.
+
+    Return the number of cities successfully (and needed to be) rewritten.
     """
 
     gpt_writer = None
@@ -507,6 +509,8 @@ class LocallogicContentRewriter:
       # if i > 2: break  # TODO: remove this break
 
     self.log_info(f'[rewrite_cities] Finished rewriting {rewrite_count} neighbourhoods/cities successfully.')
+
+    return rewrite_count
 
 
   def rewrite_cities_using_dataclasses(self, prov_code=None, lang='en', use_rag=True):
@@ -581,7 +585,7 @@ class LocallogicContentRewriter:
     section_contents: Original locallogic content. Dict of housing, transport, services, character. Assumption: if simple_append is True, 
                       only housing is really needed.
 
-    Return: a bool to indicate if rewrite is successful or not.                      
+    Return: a bool to indicate if rewrite is successful or not. (or False if not needed because housing is None)  
     """
 
     rewrites = {}
@@ -589,7 +593,7 @@ class LocallogicContentRewriter:
     if self.simple_append:   
       # only Housing for v1
       housing = section_contents['housing']   # original LocalLogic content
-      if housing is None: return       # no housing in original content, skip and do nothing
+      if housing is None: return False      # no housing in original content, skip and do nothing, return False so doesnt go towards counting
 
       if use_rag:
         avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city)
@@ -697,7 +701,7 @@ class LocallogicContentRewriter:
     self, 
     property_type='CONDO', prov_code=None, geog_id=None, 
     lang='en', use_rag=True, force_rewrite=False,
-    mode='prod'):
+    mode='prod') -> int:
     """
     Rewrites content for all cities (level 30). If prov_code or just one geog_id is provided, 
     then rewrite content for those only, and a specific property type. 
@@ -720,6 +724,9 @@ class LocallogicContentRewriter:
                               different from the current target version.
         mode (str): The mode of operation. Can be 'prod' for production or other 
                     values for different operational modes (e.g. 'mock' for testing).
+
+    Returns:
+        int: The number of neighbourhoods/cities successfully rewritten.                    
 
     The method utilizes a LocalLogicGPTRewriter for generating rewritten content 
     and applies version control to manage content updates. The version checking 
@@ -795,6 +802,8 @@ class LocallogicContentRewriter:
 
       # if i > 2: break # TODO: remove this break
     self.log_info(f'[rewrite_property_types] Finished rewriting {rewrite_count} neighbourhoods/cities successfully for property type {property_type}.')
+
+    return rewrite_count
 
 
   def rewrite_property_types_using_dataclasses(self, property_type='CONDO', prov_code=None, lang='en', use_rag=True):
@@ -908,7 +917,7 @@ class LocallogicContentRewriter:
     if housing is None or len(housing) == 0:   
       # since housing is the only section for this mode, we will skip openai chat completion request.
       self.log_info(f"No original locallogic housing content found for {lang}.", longId=longId, geog_id=geog_id)
-      return False  # not a rewrite 
+      return False  # nothing to rewrite, return false not to go towards rewrite count
     
     # dynamic info & metric injection (RAG is used in v1)
     if use_rag:
@@ -1217,7 +1226,7 @@ class LocallogicContentRewriter:
     """
     Return all listings for a given prov_code. If return_df is True, return a DataFrame, 
     otherwise return a tuple of doc_ids and sources.
-    
+
     Only these attributes: guid, city, provState, listingType, searchCategoryType, transactionType, 
     listingStatus, price are returned. Edit for more attributes if needed.
     """
