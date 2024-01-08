@@ -18,7 +18,9 @@ def load_config(yaml_config_file):
 
 def test_openai_health():
   ll_gpt_writer = LocalLogicGPTRewriter(llm_model=LIGHT_WEIGHT_LLM, available_sections=['housing'], property_type=None)
-  return ll_gpt_writer.test_openai_health()
+  status = ll_gpt_writer.test_openai_health()
+  del ll_gpt_writer    # not to be used again, it is just for sanity checking health
+  return status
 
 
 def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, force_rewrite=False):

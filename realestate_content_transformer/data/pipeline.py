@@ -83,7 +83,7 @@ class BulkUpserter:
 
 
 class LocallogicContentRewriter:
-  def __init__(self, es_host, es_port=9200, llm_model=LIGHT_WEIGHT_LLM, simple_append=True, 
+  def __init__(self, es_host, es_port=9200, llm_model=LLM, simple_append=True, 
                archiver_filepath: str = '.', archiver_host: str = 'localhost', archiver_port: int = 6379):
     '''
     es_host: Elasticsearch host
@@ -374,75 +374,6 @@ class LocallogicContentRewriter:
       # overrides_fr_housing, overrides_fr_transport, overrides_fr_services, overrides_fr_character
 
 
-  def extract_dataclasses(self, prov_code=None, geog_id=None):
-    """
-    Extract docs from ES from 4 indices (geo, geo_details_en, geo_details_fr, geo_overrides) for prov_code (if provided) or all provinces
-    if prov_code is None and geog_id is None. Only extract 1 if geo_id is provided.
-    """
-
-    if geog_id is not None:
-      self.geo_docs.extend(self.get_geo(geog_id=geog_id))
-      self.geo_detail_en_docs.extend(self.get_geo_details(geog_id=geog_id, lang='en'))
-      self.geo_detail_fr_docs.extend(self.get_geo_details(geog_id=geog_id, lang='fr'))
-      self.geo_override_docs.extend(self.get_geo_overrides(geog_id=geog_id))
-
-      # Create dictionaries for quick look-up
-      self.geo_detail_en_dict.update({doc.geog_id: doc for doc in self.geo_detail_en_docs})
-      self.geo_detail_fr_dict.update({doc.geog_id: doc for doc in self.geo_detail_fr_docs})
-      self.geo_override_dict.update({doc.longId: doc for doc in self.geo_override_docs})
-
-    else:
-      prov_codes = [prov_code] if prov_code is not None else self.prov_codes
-
-      for prov_code in prov_codes:
-
-        self.geo_docs.extend(self.get_geo(prov_code=prov_code))
-        self.geo_detail_en_docs.extend(self.get_geo_details(prov_code=prov_code, lang='en'))
-        self.geo_detail_fr_docs.extend(self.get_geo_details(prov_code=prov_code, lang='fr'))
-        self.geo_override_docs.extend(self.get_geo_overrides(prov_code=prov_code))
-
-        # Create dictionaries for quick look-up
-        geo_detail_en_dict = {doc.geog_id: doc for doc in self.geo_detail_en_docs}
-        self.geo_detail_en_dict.update(geo_detail_en_dict)
-
-        geo_detail_fr_dict = {doc.geog_id: doc for doc in self.geo_detail_fr_docs}
-        self.geo_detail_fr_dict.update(geo_detail_fr_dict)
-
-        geo_override_dict = {doc.longId: doc for doc in self.geo_override_docs}
-        self.geo_override_dict.update(geo_override_dict)
-
-    # dedup
-    self.geo_docs = self._dedup_dataclasses(self.geo_docs, pkey='geog_id')
-    self.geo_detail_en_docs = self._dedup_dataclasses(self.geo_detail_en_docs, pkey='geog_id')
-    self.geo_detail_fr_docs = self._dedup_dataclasses(self.geo_detail_fr_docs, pkey='geog_id')
-    self.geo_override_docs = self._dedup_dataclasses(self.geo_override_docs, pkey='longId')
-    # rebuild dictionaries
-    self.geo_detail_en_dict = {doc.geog_id: doc for doc in self.geo_detail_en_docs}
-    self.geo_detail_fr_dict = {doc.geog_id: doc for doc in self.geo_detail_fr_docs}
-    self.geo_override_dict = {doc.longId: doc for doc in self.geo_override_docs}
-
-    # (re)build longId -> geog_id dictionary
-    self.longId_to_geog_id_dict = {doc.longId: doc.geog_id for doc in self.geo_docs}
-
-
-  def _dedup_dataclasses(self, doc_list: List[BaseDoc], pkey: str) -> List[BaseDoc]:
-    '''
-    dedup the list of BaseDoc with the pkey and keep the last occurence 
-    '''
-    deduplicated_doc = OrderedDict()
-
-    # Iterate in reverse to keep the last occurrences
-    for doc in reversed(doc_list):
-        key = getattr(doc, pkey)
-        # Set default if the geog_id key is not already present
-        deduplicated_doc.setdefault(key, doc)
-
-    # Reverse again to maintain the original order
-    dedup_doc_list = list(reversed(deduplicated_doc.values()))
-
-    return dedup_doc_list
-
-
   def rewrite_cities(self, prov_code=None, geog_id=None, lang='en', use_rag=True) -> int:
     """
     loop through all cities (level 30) (or by prov_code if provided) and rewrite content for each city, or
@@ -511,67 +442,6 @@ class LocallogicContentRewriter:
     self.log_info(f'[rewrite_cities] Finished rewriting {rewrite_count} neighbourhoods/cities successfully.')
 
     return rewrite_count
-
-
-  def rewrite_cities_using_dataclasses(self, prov_code=None, lang='en', use_rag=True):
-    """
-    same as rewrite_cities(...) but using dataclasses instead of pandas dataframe.
-    """
-    gpt_writer = None
-    if not self.simple_append:   # need to enlist GPT help.
-      gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model, 
-                                         available_sections=['housing', 'transport', 'services', 'character'], 
-                                         property_type=None)
-      
-    # Perform "joins", geo is considered the "driving table"
-    for geo_doc in self.geo_docs:
-      try:
-        geog_id = geo_doc.geog_id
-        longId = geo_doc.longId
-        city = geo_doc.city
-        city_slug = geo_doc.citySlug
-
-        geo_detail_doc = None
-        if lang == 'en':
-          geo_detail_doc = self.geo_detail_en_dict.get(geog_id)
-        elif lang == 'fr':
-          geo_detail_doc = self.geo_detail_fr_dict.get(geog_id)
-
-        if geo_detail_doc:
-          province = geo_detail_doc.data.province
-          if prov_code is not None and province != prov_code: continue
-
-          # city = geo_detail_doc.data.name
-
-          housing = geo_detail_doc.data.profiles.housing if geo_detail_doc.data.profiles else None
-          transport = geo_detail_doc.data.profiles.transport if geo_detail_doc.data.profiles else None
-          services = geo_detail_doc.data.profiles.services if geo_detail_doc.data.profiles else None
-          character = geo_detail_doc.data.profiles.character if geo_detail_doc.data.profiles else None
-
-          section_contents = {'housing': housing, 'transport': transport, 'services': services, 'character': character}
-
-          print(f'geog_id: {geog_id}, longId: {longId}, city: {city}, city_slug: {city_slug}, prov_code: {province}')
-          print(f'housing: {housing}')
-          print(f'transport: {transport}')
-          print(f'services: {services}')
-          print(f'character: {character}')
-
-          # self.rewrite_city(geog_id=geog_id, longId=longId, city=city, city_slug=city_slug, prov_code=province,
-          #               lang=lang, 
-          #               gpt_writer=gpt_writer, use_rag=use_rag, 
-          #               **section_contents)        
-          # Avoid overwhelming openai api, wait a little before moving on to the next geog_id
-          time.sleep(self.wait_sec)
-        else:
-          self.log_error(f'No geo_detail_{lang}_doc found', longId=longId, geog_id=geog_id)
-          time.sleep(self.wait_sec)
-          continue
-      except (AttributeError, KeyError) as e:
-        self.log_error(str(e) + f'|| From rewrite_cities_using_dataclasses(...) geo_doc with prov_code {prov_code}', longId=longId, geog_id=geog_id)
-        time.sleep(self.wait_sec)
-      except Exception as e:
-        self.log_error(str(e), longId=longId, geog_id=geog_id)
-        time.sleep(self.wait_sec)
 
 
   def rewrite_city(self, geog_id, longId, city, city_slug, prov_code, lang='en', gpt_writer=None, use_rag=True, **section_contents) -> bool:
@@ -804,78 +674,6 @@ class LocallogicContentRewriter:
     self.log_info(f'[rewrite_property_types] Finished rewriting {rewrite_count} neighbourhoods/cities successfully for property type {property_type}.')
 
     return rewrite_count
-
-
-  def rewrite_property_types_using_dataclasses(self, property_type='CONDO', prov_code=None, lang='en', use_rag=True):
-    """
-    same as rewrite_property_types(...) but using dataclasses instead of pandas dataframe.
-    """
-    gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model, 
-                                       available_sections=['housing'],
-                                       property_type=property_type)
-    
-    # Perform "joins", geo is considered the "driving table"
-    for geo_doc in self.geo_docs:
-      try:
-        geog_id = geo_doc.geog_id
-        longId = geo_doc.longId
-        city = geo_doc.city
-
-        geo_detail_doc = self.geo_detail_en_dict.get(geog_id) if lang == 'en' else self.geo_detail_fr_dict.get(geog_id)
-
-        if geo_detail_doc:
-          province = geo_detail_doc.data.province
-          if prov_code is not None and province != prov_code: continue  # filter only for prov_code if provided
-          # city = geo_detail_doc.data.name
-
-          geo_override_doc = self.geo_override_dict.get(geo_doc.longId)
-          if geo_override_doc:
-            if lang == 'en':
-              if geo_override_doc.overrides_en and geo_override_doc.overrides_en.data:
-                # get housing from overrides_en_housing if it exists, otherwise use en_housing
-                # housing = geo_override_doc.overrides_en.data.profiles.housing if geo_override_doc.overrides_en.data.profiles else None
-                if geo_override_doc.overrides_en.data.profiles.housing is not None:
-                  housing = geo_override_doc.overrides_en.data.profiles.housing
-                elif geo_detail_doc.data.profiles.housing is not None:
-                  housing = geo_detail_doc.data.profiles.housing
-                else:
-                  housing = None
-
-            elif lang == 'fr':
-              if geo_override_doc.overrides_fr and geo_override_doc.overrides_fr.data:
-                # housing = geo_override_doc.overrides_fr.data.profiles.housing if geo_override_doc.overrides_fr.data.profiles else None
-                if geo_override_doc.overrides_fr.data.profiles.housing is not None:
-                  housing = geo_override_doc.overrides_fr.data.profiles.housing
-                elif geo_detail_doc.data.profiles.housing is not None:
-                  housing = geo_detail_doc.data.profiles.housing
-                else:
-                  housing = None
-
-            section_contents = {'housing': housing}
-
-            self.rewrite_property_type(geog_id=geog_id, longId=longId, city=city,
-                              property_type=property_type,
-                              lang=lang, 
-                              gpt_writer=gpt_writer, use_rag=use_rag,
-                              **section_contents)
-            
-            # print(f'geog_id: {geog_id}, longId: {longId}, city: {city}, prov_code: {province}')
-            # print(f'housing: {housing}')
-          else:
-            self.log_error(f'No geo_override_doc found', longId=longId, geog_id=geog_id)
-            time.sleep(self.wait_sec)
-            continue
-
-        else:
-          self.log_error(f'No geo_detail_{lang}_doc found', longId=longId, geog_id=geog_id)
-          time.sleep(self.wait_sec)
-          continue
-      except (AttributeError, KeyError) as e:
-        self.log_error(str(e) + f'|| From rewrite_property_types_using_dataclasses(...) geo_doc with prov_code {prov_code}', longId=longId, geog_id=geog_id)
-        time.sleep(self.wait_sec)
-      except Exception as e:
-        self.log_error(str(e), longId=longId, geog_id=geog_id)
-        time.sleep(self.wait_sec)
 
 
   def rewrite_property_type(
@@ -1684,6 +1482,205 @@ class LocallogicContentRewriter:
     metrics_df.drop(columns=['city_pc'], inplace=True)
 
     return metrics_df
+
+  # dataclasses related implementation (save here for future dev)
+  def extract_dataclasses(self, prov_code=None, geog_id=None):
+    """
+    Extract docs from ES from 4 indices (geo, geo_details_en, geo_details_fr, geo_overrides) for prov_code (if provided) or all provinces
+    if prov_code is None and geog_id is None. Only extract 1 if geo_id is provided.
+    """
+
+    if geog_id is not None:
+      self.geo_docs.extend(self.get_geo(geog_id=geog_id))
+      self.geo_detail_en_docs.extend(self.get_geo_details(geog_id=geog_id, lang='en'))
+      self.geo_detail_fr_docs.extend(self.get_geo_details(geog_id=geog_id, lang='fr'))
+      self.geo_override_docs.extend(self.get_geo_overrides(geog_id=geog_id))
+
+      # Create dictionaries for quick look-up
+      self.geo_detail_en_dict.update({doc.geog_id: doc for doc in self.geo_detail_en_docs})
+      self.geo_detail_fr_dict.update({doc.geog_id: doc for doc in self.geo_detail_fr_docs})
+      self.geo_override_dict.update({doc.longId: doc for doc in self.geo_override_docs})
+
+    else:
+      prov_codes = [prov_code] if prov_code is not None else self.prov_codes
+
+      for prov_code in prov_codes:
+
+        self.geo_docs.extend(self.get_geo(prov_code=prov_code))
+        self.geo_detail_en_docs.extend(self.get_geo_details(prov_code=prov_code, lang='en'))
+        self.geo_detail_fr_docs.extend(self.get_geo_details(prov_code=prov_code, lang='fr'))
+        self.geo_override_docs.extend(self.get_geo_overrides(prov_code=prov_code))
+
+        # Create dictionaries for quick look-up
+        geo_detail_en_dict = {doc.geog_id: doc for doc in self.geo_detail_en_docs}
+        self.geo_detail_en_dict.update(geo_detail_en_dict)
+
+        geo_detail_fr_dict = {doc.geog_id: doc for doc in self.geo_detail_fr_docs}
+        self.geo_detail_fr_dict.update(geo_detail_fr_dict)
+
+        geo_override_dict = {doc.longId: doc for doc in self.geo_override_docs}
+        self.geo_override_dict.update(geo_override_dict)
+
+    # dedup
+    self.geo_docs = self._dedup_dataclasses(self.geo_docs, pkey='geog_id')
+    self.geo_detail_en_docs = self._dedup_dataclasses(self.geo_detail_en_docs, pkey='geog_id')
+    self.geo_detail_fr_docs = self._dedup_dataclasses(self.geo_detail_fr_docs, pkey='geog_id')
+    self.geo_override_docs = self._dedup_dataclasses(self.geo_override_docs, pkey='longId')
+    # rebuild dictionaries
+    self.geo_detail_en_dict = {doc.geog_id: doc for doc in self.geo_detail_en_docs}
+    self.geo_detail_fr_dict = {doc.geog_id: doc for doc in self.geo_detail_fr_docs}
+    self.geo_override_dict = {doc.longId: doc for doc in self.geo_override_docs}
+
+    # (re)build longId -> geog_id dictionary
+    self.longId_to_geog_id_dict = {doc.longId: doc.geog_id for doc in self.geo_docs}
+
+  def _dedup_dataclasses(self, doc_list: List[BaseDoc], pkey: str) -> List[BaseDoc]:
+    '''
+    dedup the list of BaseDoc with the pkey and keep the last occurence 
+    '''
+    deduplicated_doc = OrderedDict()
+
+    # Iterate in reverse to keep the last occurrences
+    for doc in reversed(doc_list):
+        key = getattr(doc, pkey)
+        # Set default if the geog_id key is not already present
+        deduplicated_doc.setdefault(key, doc)
+
+    # Reverse again to maintain the original order
+    dedup_doc_list = list(reversed(deduplicated_doc.values()))
+
+    return dedup_doc_list
+
+  def rewrite_cities_using_dataclasses(self, prov_code=None, lang='en', use_rag=True):
+    """
+    same as rewrite_cities(...) but using dataclasses instead of pandas dataframe.
+    """
+    gpt_writer = None
+    if not self.simple_append:   # need to enlist GPT help.
+      gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model, 
+                                         available_sections=['housing', 'transport', 'services', 'character'], 
+                                         property_type=None)
+      
+    # Perform "joins", geo is considered the "driving table"
+    for geo_doc in self.geo_docs:
+      try:
+        geog_id = geo_doc.geog_id
+        longId = geo_doc.longId
+        city = geo_doc.city
+        city_slug = geo_doc.citySlug
+
+        geo_detail_doc = None
+        if lang == 'en':
+          geo_detail_doc = self.geo_detail_en_dict.get(geog_id)
+        elif lang == 'fr':
+          geo_detail_doc = self.geo_detail_fr_dict.get(geog_id)
+
+        if geo_detail_doc:
+          province = geo_detail_doc.data.province
+          if prov_code is not None and province != prov_code: continue
+
+          # city = geo_detail_doc.data.name
+
+          housing = geo_detail_doc.data.profiles.housing if geo_detail_doc.data.profiles else None
+          transport = geo_detail_doc.data.profiles.transport if geo_detail_doc.data.profiles else None
+          services = geo_detail_doc.data.profiles.services if geo_detail_doc.data.profiles else None
+          character = geo_detail_doc.data.profiles.character if geo_detail_doc.data.profiles else None
+
+          section_contents = {'housing': housing, 'transport': transport, 'services': services, 'character': character}
+
+          print(f'geog_id: {geog_id}, longId: {longId}, city: {city}, city_slug: {city_slug}, prov_code: {province}')
+          print(f'housing: {housing}')
+          print(f'transport: {transport}')
+          print(f'services: {services}')
+          print(f'character: {character}')
+
+          # self.rewrite_city(geog_id=geog_id, longId=longId, city=city, city_slug=city_slug, prov_code=province,
+          #               lang=lang, 
+          #               gpt_writer=gpt_writer, use_rag=use_rag, 
+          #               **section_contents)        
+          # Avoid overwhelming openai api, wait a little before moving on to the next geog_id
+          time.sleep(self.wait_sec)
+        else:
+          self.log_error(f'No geo_detail_{lang}_doc found', longId=longId, geog_id=geog_id)
+          time.sleep(self.wait_sec)
+          continue
+      except (AttributeError, KeyError) as e:
+        self.log_error(str(e) + f'|| From rewrite_cities_using_dataclasses(...) geo_doc with prov_code {prov_code}', longId=longId, geog_id=geog_id)
+        time.sleep(self.wait_sec)
+      except Exception as e:
+        self.log_error(str(e), longId=longId, geog_id=geog_id)
+        time.sleep(self.wait_sec)
+
+  def rewrite_property_types_using_dataclasses(self, property_type='CONDO', prov_code=None, lang='en', use_rag=True):
+    """
+    same as rewrite_property_types(...) but using dataclasses instead of pandas dataframe.
+    """
+    gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model, 
+                                       available_sections=['housing'],
+                                       property_type=property_type)
+    
+    # Perform "joins", geo is considered the "driving table"
+    for geo_doc in self.geo_docs:
+      try:
+        geog_id = geo_doc.geog_id
+        longId = geo_doc.longId
+        city = geo_doc.city
+
+        geo_detail_doc = self.geo_detail_en_dict.get(geog_id) if lang == 'en' else self.geo_detail_fr_dict.get(geog_id)
+
+        if geo_detail_doc:
+          province = geo_detail_doc.data.province
+          if prov_code is not None and province != prov_code: continue  # filter only for prov_code if provided
+          # city = geo_detail_doc.data.name
+
+          geo_override_doc = self.geo_override_dict.get(geo_doc.longId)
+          if geo_override_doc:
+            if lang == 'en':
+              if geo_override_doc.overrides_en and geo_override_doc.overrides_en.data:
+                # get housing from overrides_en_housing if it exists, otherwise use en_housing
+                # housing = geo_override_doc.overrides_en.data.profiles.housing if geo_override_doc.overrides_en.data.profiles else None
+                if geo_override_doc.overrides_en.data.profiles.housing is not None:
+                  housing = geo_override_doc.overrides_en.data.profiles.housing
+                elif geo_detail_doc.data.profiles.housing is not None:
+                  housing = geo_detail_doc.data.profiles.housing
+                else:
+                  housing = None
+
+            elif lang == 'fr':
+              if geo_override_doc.overrides_fr and geo_override_doc.overrides_fr.data:
+                # housing = geo_override_doc.overrides_fr.data.profiles.housing if geo_override_doc.overrides_fr.data.profiles else None
+                if geo_override_doc.overrides_fr.data.profiles.housing is not None:
+                  housing = geo_override_doc.overrides_fr.data.profiles.housing
+                elif geo_detail_doc.data.profiles.housing is not None:
+                  housing = geo_detail_doc.data.profiles.housing
+                else:
+                  housing = None
+
+            section_contents = {'housing': housing}
+
+            self.rewrite_property_type(geog_id=geog_id, longId=longId, city=city,
+                              property_type=property_type,
+                              lang=lang, 
+                              gpt_writer=gpt_writer, use_rag=use_rag,
+                              **section_contents)
+            
+            # print(f'geog_id: {geog_id}, longId: {longId}, city: {city}, prov_code: {province}')
+            # print(f'housing: {housing}')
+          else:
+            self.log_error(f'No geo_override_doc found', longId=longId, geog_id=geog_id)
+            time.sleep(self.wait_sec)
+            continue
+
+        else:
+          self.log_error(f'No geo_detail_{lang}_doc found', longId=longId, geog_id=geog_id)
+          time.sleep(self.wait_sec)
+          continue
+      except (AttributeError, KeyError) as e:
+        self.log_error(str(e) + f'|| From rewrite_property_types_using_dataclasses(...) geo_doc with prov_code {prov_code}', longId=longId, geog_id=geog_id)
+        time.sleep(self.wait_sec)
+      except Exception as e:
+        self.log_error(str(e), longId=longId, geog_id=geog_id)
+        time.sleep(self.wait_sec)
 
 """Sample of geo (rlp_content_geo_3) doc:
 
