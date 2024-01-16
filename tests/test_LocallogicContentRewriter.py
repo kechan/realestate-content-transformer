@@ -20,10 +20,6 @@ logging.basicConfig(
 ) 
 logger = logging.getLogger(__name__)
 
-# enable SSL for local testing and dev
-# PROD: ssh -N -L 9201:34.66.125.110:9200 jupyter@34.83.110.8 -i ~/.ssh/id_rsa
-# UAT: ssh -N -L 9201:104.198.180.110:9200 jupyter@34.83.110.8 -i ~/.ssh/id_rsa
-
 # How to run:
 # export ES_HOST=localhost
 # export ES_PORT=9201  
