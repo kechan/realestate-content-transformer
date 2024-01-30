@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from enum import Enum
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -38,14 +38,16 @@ class ProvinceCode(str, Enum):
   SK = "SK"
   YT = "YT"
 
-class MainConfig(BaseModel):
-  es_host: str = Field(..., example="104.198.180.110", description="Elasticsearch host. Default is 'localhost' if not provided.")
+class RewriterConfig(BaseModel):
+  es_host: str = Field(..., example="es_ip", description="Elasticsearch host. Default is 'localhost' if not provided.")
   es_port: int = Field(..., example=9200, description="Elasticsearch port. Default is 9201 if not provided.")
+  
+class RunConfig(RewriterConfig):
   prov_code: Optional[ProvinceCode] = Field(None, example="BC", description="Optional province code. Either prov_code or geog_id is required.")
   geog_id: Optional[str] = Field(None, example="g30_dxbcrsms", description="Optional geographic ID to process a specific location. If not provided, the script processes the entire province.")
-  lang: str = Field('en', example='en', description='Language, Default is "en" if not provided.')
+  lang: str = Field('en', example='en', description='Language, Default is "en" if not provided.')  
   archiver_file: Optional[str] = Field(None, example="./archive_rewrites.txt", description='The filepath to the archiver file. Default is "./archive_rewrites.txt" if not provided.')
-  force_rewrite: bool = Field(False, example=False, description='Force rewrite regardless of version')
+  force_rewrite: bool = Field(False, example=False, description='Force rewrite regardless of version')  
 
 def get_run_entry_df(csv_file='run_entry_table.csv'):
   try:
@@ -76,8 +78,15 @@ def test_openai_health():
   del ll_gpt_writer    # not to be used again, it is just for sanity checking health
   return status
 
+def get_temp_filename():
+  return "/tmp/dummy_archiver_file.txt"  
+
+@app.get("/")
+def read_root():
+  return {"message": "Welcone to Local Logic Content Rewriter Service Endpoints"}
+
 @celery_app.task
-def main(config: MainConfig) -> Tuple[int, float]:
+def main(config: RunConfig) -> Tuple[int, float]:
   # check openai health
   # will immediately exit if not healthy and log the error
   # NOTE: within rewrite_property_types, a consecutive failure count is used to halt if there are too many consecutive failures (due mostly to openai api)
@@ -145,7 +154,7 @@ def get_task_status(task_id: str):
   return {"task_id": str(task.id), "task_status": task.status}
 
 @app.post("/main")
-def run_main(config: MainConfig):
+def run_main(config: RunConfig):
   # Check that either prov_code or geog_id is provided but not both
   if not (config.prov_code or config.geog_id):
     raise HTTPException(status_code=400, detail="Either prov_code or geog_id must be provided.")
@@ -161,17 +170,36 @@ def run_main(config: MainConfig):
   return {"task_id": str(task.id)}
 
 @app.get("/report/{version}")
-async def generate_report(version: str, config: MainConfig):
+async def generate_report(version: str, config: RewriterConfig = Depends()):
+  print(f'host: {config.es_host}, port: {config.es_port}')
   ll_rewriter = LocallogicContentRewriter(
     es_host=config.es_host, 
     es_port=config.es_port, 
     llm_model=LLM,
     simple_append=True,
-    archiver_filepath=config.archiver_file)
+    archiver_filepath=get_temp_filename())
   
   ll_rewriter.extract_content(incl_property_override=True)
 
   report_df = ll_rewriter.generate_reports(version=version)
-  report_json = report_df.to_json(orient='records')
+
+  report_json = report_df.reset_index().to_json(orient='records')
   report_obj = json.loads(report_json)
   return JSONResponse(content=report_obj)
+
+@app.get("/geo_overrides/{longId}")
+async def get_geo_overrides_doc(longId: str, config: RewriterConfig = Depends()):
+  """
+  Get the document from index rlp_content_geo_overrides_current for a given longId
+  """
+  ll_rewriter = LocallogicContentRewriter(
+    es_host=config.es_host, 
+    es_port=config.es_port, 
+    llm_model=LLM,
+    simple_append=True,
+    archiver_filepath=get_temp_filename())
+  
+  geo_overrides_index_name = 'rlp_content_geo_overrides_current'
+  doc = ll_rewriter.es_client.get(index=geo_overrides_index_name, id=longId)
+
+  return JSONResponse(content=doc['_source'])
