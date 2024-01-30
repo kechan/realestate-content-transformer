@@ -16,6 +16,7 @@ import pandas as pd
 
 from realestate_content_transformer.data.pipeline import LocallogicContentRewriter
 from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
+from realestate_content_transformer.utils.misc import archive_logs
 
 LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
 LLM = 'gpt-4-1106-preview'
@@ -171,7 +172,11 @@ def run_main(config: RunConfig):
 
 @app.get("/report/{version}")
 async def generate_report(version: str, config: RewriterConfig = Depends()):
-  print(f'host: {config.es_host}, port: {config.es_port}')
+  """
+  Generate a report for the given version
+  version: the version of the report E.g. 202401
+  """
+  # print(f'host: {config.es_host}, port: {config.es_port}')
   ll_rewriter = LocallogicContentRewriter(
     es_host=config.es_host, 
     es_port=config.es_port, 
@@ -203,3 +208,15 @@ async def get_geo_overrides_doc(longId: str, config: RewriterConfig = Depends())
   doc = ll_rewriter.es_client.get(index=geo_overrides_index_name, id=longId)
 
   return JSONResponse(content=doc['_source'])
+
+@app.post("/archive_logs")
+async def run_archive_logs(log_dir: str):
+  """
+  Archive log files in the given directory.
+  """
+  log_dir = Path(log_dir)
+
+  prov_codes = ["AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU", "ON", "PE", "QC", "SK", "YT"]
+  archive_logs(log_dir, prov_codes)
+
+  return {"message": "Logs archiving process started."}

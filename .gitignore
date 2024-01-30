@@ -170,3 +170,4 @@ tests/unittest_recovery_rewrites.txt
 
 # scripts
 scripts/run_entry_table.csv
+scripts/run_*.tar.gz
