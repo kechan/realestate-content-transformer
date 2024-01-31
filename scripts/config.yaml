@@ -1,3 +1,6 @@
+# Run with:
+#    % python run_locallogic_content_rewriter.py --config whatever_config.yaml
+
 es_host: localhost         # Elasticsearch host, default is localhost
 es_port: 9201              # Elasticsearch port, default is 9201
 
