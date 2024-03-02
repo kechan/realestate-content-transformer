@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
   name="realestate_content_transformer",
-  version="0.0.1",
+  version="1.0.0",
   author="Kelvin Chan",
   author_email="kechan.ca@gmail.com",
   description="Real Estate Content Transformer",
