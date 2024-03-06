@@ -33,11 +33,11 @@ class ChatGPTRewriteArchiver:
       return self.db.ping()
     return "pong"
 
-  def add_record(self, longId: str, property_type: str, version: str, user_prompt: str, chatgpt_response: str) -> None:
+  def add_record(self, longId: str, property_type: str, version: str, lang: str, user_prompt: str, chatgpt_response: str) -> None:
     if property_type not in ['LUXURY', 'CONDO', 'SEMI-DETACHED', 'TOWNHOUSE', 'INVESTMENT']:
       raise ValueError(f"Invalid property_type {property_type}.")
 
-    key = f"rewrite:{longId}:{property_type}:{version}"
+    key = f"rewrite:{longId}:{property_type}:{version}:{lang}"
     value = {
       'version': version,
       'user_prompt': user_prompt,
@@ -52,21 +52,21 @@ class ChatGPTRewriteArchiver:
       with open(self.file_path, 'a') as f:
         f.write(f"{key}|| {value}\n")   # use || as separator as this shouldnt be seen in value
 
-  def update_response(self, longId: str, property_type: str, version: str, new_response: str) -> None:
-    key = f"rewrite:{longId}:{property_type}:{version}"
+  def update_response(self, longId: str, property_type: str, version: str, lang: str, new_response: str) -> None:
+    key = f"rewrite:{longId}:{property_type}:{version}:{lang}"
     if self.db.exists(key):
       self.db.hset(key, 'chatgpt_response', new_response)
     else:
       raise KeyError("Record not found.")
 
-  def update_prompt(self, longId: str, property_type: str, version: str, new_prompt: str) -> None:
-    key = f"rewrite:{longId}:{property_type}:{version}"
+  def update_prompt(self, longId: str, property_type: str, version: str, lang: str, new_prompt: str) -> None:
+    key = f"rewrite:{longId}:{property_type}:{version}:{lang}"
     if self.db.exists(key):
       self.db.hset(key, 'user_prompt', new_prompt)
     else:
       raise KeyError("Record not found.")
 
-  def get_record(self, longId: str, property_type: str, version: str, use_cache=False) -> Optional[Dict[str, str]]:
+  def get_record(self, longId: str, property_type: str, version: str, lang: str, use_cache=False) -> Optional[Dict[str, str]]:
     '''
     # TODO: Implement a more robust method for determining the latest record when querying by version prefix.
     # Current implementation assumes the last record encountered in the dataset is the latest one, which might not 
@@ -88,7 +88,7 @@ class ChatGPTRewriteArchiver:
 
     # key = f"rewrite:{longId}:{property_type}:{version}"
     if self.storage_type == ArchiveStorageType.REDIS:
-      pattern = f"rewrite:{longId}:{property_type}:{version}*"
+      pattern = f"rewrite:{longId}:{property_type}:{version}:{lang}*"
       keys = self.db.keys(pattern)
       for key in keys:
         record = self.db.hgetall(key)
@@ -97,7 +97,7 @@ class ChatGPTRewriteArchiver:
     elif self.storage_type == ArchiveStorageType.PLAIN_TEXT:
       if use_cache:
         if self.cached_df is not None and len(self.cached_df) > 0:
-          filtered_df = self.cached_df.q(f"longId == '{longId}' and property_type == '{property_type}' and version.str.startswith('{version}')")
+          filtered_df = self.cached_df.q(f"longId == '{longId}' and property_type == '{property_type}' and version.str.startswith('{version}') and lang == '{lang}'")
           if not filtered_df.empty:
             return filtered_df.iloc[-1].to_dict()
         else:
@@ -105,21 +105,33 @@ class ChatGPTRewriteArchiver:
 
       else:
         key_prefix = f"rewrite:{longId}:{property_type}:"
+        # with open(self.file_path, 'r') as f:
+        #   for line in f:
+        #       if line.startswith(key_prefix):
+        #         key, sep, record_str = line.partition('||')
+        #         if sep and version_regex.match(key.split(':', 3)[-1]):
+        #           try:
+        #             record = ast.literal_eval(record_str.strip())
+        #             # records[key] = record_dict
+        #           except (SyntaxError, ValueError) as e:
+        #             print(f"Error parsing the record string: {e}", file=sys.stderr)
         with open(self.file_path, 'r') as f:
           for line in f:
-              if line.startswith(key_prefix):
-                key, sep, record_str = line.partition('||')
-                if sep and version_regex.match(key.split(':', 3)[-1]):
+            key, sep, record_str = line.partition('||')
+            if sep:
+              key_parts = key.split(':')
+              if len(key_parts) == 5:  # Ensure the key has the correct number of parts
+                key_longId, key_property_type, key_version, key_lang = key_parts[1], key_parts[2], key_parts[3], key_parts[4]
+                if key_longId == longId and key_property_type == property_type and key_lang == lang and key_version.startswith(version):
                   try:
                     record = ast.literal_eval(record_str.strip())
-                    # records[key] = record_dict
                   except (SyntaxError, ValueError) as e:
                     print(f"Error parsing the record string: {e}", file=sys.stderr)
 
       return record if record else None
 
-  def remove_record(self, longId: str, property_type: str, version: str) -> None:
-    key = f"rewrite:{longId}:{property_type}:{version}"
+  def remove_record(self, longId: str, property_type: str, version: str, lang: str) -> None:
+    key = f"rewrite:{longId}:{property_type}:{version}:{lang}"
     if self.db.exists(key):
       self.db.delete(key)
     else:
@@ -132,8 +144,8 @@ class ChatGPTRewriteArchiver:
       keys = self.db.keys('rewrite:*')      
       for key in keys:
         record = self.db.hgetall(key)
-        longId, property_type, version = key.split(':', 3)[1:]
-        records[f"{longId}:{property_type}:{version}"] = record
+        longId, property_type, version, lang = key.split(':', 4)[1:]
+        records[f"{longId}:{property_type}:{version}:{lang}"] = record
 
     elif self.storage_type == ArchiveStorageType.PLAIN_TEXT:
       with open(self.file_path, 'r') as f:
@@ -141,10 +153,11 @@ class ChatGPTRewriteArchiver:
           parts = line.split('||')
           if len(parts) == 2:
             key, record_str = parts
-            longId, property_type, version = key.split(':', 3)[1:]
+
+            longId, property_type, version, lang = key.split(':', 4)[1:]
             try:
               record_dict = ast.literal_eval(record_str.strip())
-              records[f"{longId}:{property_type}:{version}"] = record_dict
+              records[f"{longId}:{property_type}:{version}:{lang}"] = record_dict
             except (SyntaxError, ValueError) as e:
               print(f"Error parsing the record string: {e}", file=sys.stderr)
     
@@ -152,10 +165,32 @@ class ChatGPTRewriteArchiver:
       df = pd.DataFrame.from_dict(records, orient='index')
       df.reset_index(inplace=True)
       if len(df) > 0:
-        df[['longId', 'property_type', 'version']] = df['index'].str.split(':', expand=True)
+        df[['longId', 'property_type', 'version', 'lang']] = df['index'].str.split(':', expand=True)
         df.drop(columns=['index'], inplace=True)
-        df = df[['longId', 'property_type', 'version', 'user_prompt', 'chatgpt_response']]
+        df = df[['longId', 'property_type', 'version', 'lang', 'user_prompt', 'chatgpt_response']]
 
       return df
 
     return records
+
+  @staticmethod
+  def migrate_data_v1_to_v1_0_1(in_file_path: Union[str, Path], out_file_path: Union[str, Path]) -> None:
+    # Read all lines from the file
+    with open(in_file_path, 'r') as f:
+      lines = f.readlines()
+
+    # Modify the lines to include the 'lang' parameter in the key
+    new_lines = []
+    for line in lines:
+      key, sep, record_str = line.partition('||')
+      if sep:
+        key_parts = key.split(':')
+        if len(key_parts) == 4:  # Ensure the key has the correct number of parts for v1 (without the 'lang' parameter)
+          key_parts.append('en')  # Assume a default language for existing records
+          new_key = ':'.join(key_parts)
+          new_line = f"{new_key}||{record_str}"
+          new_lines.append(new_line)
+
+    # Write the modified lines back to file
+    with open(out_file_path, 'w') as f:
+      f.writelines(new_lines)

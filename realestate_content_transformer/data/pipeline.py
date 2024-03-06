@@ -27,6 +27,7 @@ LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
 LLM = 'gpt-4-1106-preview'
 
 class BulkUpserter:
+  # Handles bulk updates to an Elasticsearch index, with error logging and optional ID mapping.
   def __init__(self, es_client: Elasticsearch, index_name: str, longId_to_geog_id_dict: Dict[str, str] = None):
     self.es_client = es_client
     self.index_name = index_name
@@ -151,16 +152,16 @@ class LocallogicContentRewriter:
 
     # OVERRIDE_COLS = [
     #     'overrides_en_housing', 'overrides_en_transport', 'overrides_en_services', 'overrides_en_character',
-    #     'overrides_fr_housing', 'overrides_fr_transport', 'overrides_fr_services', 'overrides_fr_character'
-    # ]
+    #     'overrides_fr_housing', 'overrides_fr_transport', 'overrides_fr_services', 'overrides_fr_character' ]
 
     # we don't ever override 'transport', 'services', and 'character' for now.
     OVERRIDE_COLS = [
         'overrides_en_housing',
-        # 'overrides_fr_housing',   # fr not needed in v1
+        'overrides_fr_housing',   # fr needed in v2
     ]
     if incl_property_override:
-      OVERRIDE_COLS.extend([f"overrides_{property_type.lower().replace('-','_')}_en_housing" for property_type in self.property_types])  # only for en for v1
+      OVERRIDE_COLS.extend([f"overrides_{property_type.lower().replace('-','_')}_en_housing" for property_type in self.property_types])  # fr needed in v2
+      OVERRIDE_COLS.extend([f"overrides_{property_type.lower().replace('-','_')}_fr_housing" for property_type in self.property_types])  
     
     def process_overrides(geo_overrides_df, lang):
       # TODO: this is for non property type override, need to implement similar for property type override later.
@@ -272,8 +273,7 @@ class LocallogicContentRewriter:
         if 'overrides' in geo_overrides_df.columns:
           geo_overrides_df.overrides = geo_overrides_df.overrides.replace(np.nan, None)
 
-        # for lang in ['en', 'fr']:
-        for lang in ['en']:     # only en needed for v1
+        for lang in ['en', 'fr']:  # fr needed for v2
           geo_overrides_df = process_overrides(geo_overrides_df, lang)
 
         # Replace np.NaN with None, and if a columnn is missing, create it with None.
@@ -349,6 +349,7 @@ class LocallogicContentRewriter:
         else:
           for c in OVERRIDE_COLS: geo_all_content_df[c] = None
           geo_all_content_df['overrides_en_version'] = None
+          geo_all_content_df['overrides_fr_version'] = None
 
         # replace np.nan with None
         geo_all_content_df.replace({np.nan: None}, inplace=True)
@@ -468,7 +469,12 @@ class LocallogicContentRewriter:
       if use_rag:
         avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city)
         if avg_price > 1.0:
-          overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is $ {avg_price:,.0f}."   #TODO: double check before real deployment run
+          if lang == 'en':
+            overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is $ {avg_price:,.0f}."
+          elif lang == 'fr':
+            overriden_housing = housing + f" Le prix moyen d'une inscription immobilière MLS® à {city} est de $ {avg_price:,.0f}."
+          else:
+            raise ValueError(f'Unsupported language: {lang}')
         else:
           overriden_housing = housing    # no override, this can happen if there's no listing for the city, province.
       else:
@@ -489,14 +495,19 @@ class LocallogicContentRewriter:
       if use_rag:
         # additional metrics to inject into prompt (using RAG)          
         avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city)
-        params_dict = {'Average price on MLS®': avg_price}        
+        if lang == 'en':
+          params_dict = {'Average price on MLS®': avg_price}
+        elif lang == 'fr':
+          params_dict = {'Prix moyen sur MLS®': avg_price}
+        else:
+          raise ValueError(f'Unsupported language: {lang}')
+
       else: # use placeholder, instruct to use placeholders while adding new information
         avg_price_explanation = self.get_avg_price_explanation()
         params_dict = {'[avg_price]': avg_price_explanation}
 
       rewrites = gpt_writer.rewrite(params_dict=params_dict, use_rag=use_rag, 
-                                    housing=housing
-                                    # transport=transport, services=services, character=character
+                                    housing=housing   # transport=transport, services=services, character=character
                                     )
       if self.archiver:
         messages = gpt_writer.construct_openai_user_prompt(params_dict=params_dict, use_rag=use_rag, 
@@ -505,7 +516,7 @@ class LocallogicContentRewriter:
                                     )
         user_prompt = messages[0]['content']
         chatgpt_response = self._extract_format_for_archive(rewrites)
-        self.archiver.add_record(longId=longId, property_type='None', version=self.version_string, user_prompt=user_prompt, chatgpt_response=chatgpt_response)
+        self.archiver.add_record(longId=longId, property_type='None', version=self.version_string, lang=lang, user_prompt=user_prompt, chatgpt_response=chatgpt_response)
 
     if rewrites['error_message'] is None:
       rewrites.pop('error_message', None)   # remove error_message from rewrites dict
@@ -691,7 +702,7 @@ class LocallogicContentRewriter:
     # first check if GPT rewrite of the targeted version is already in archive.
     # if found, then use it.
     if self.archiver:
-      archived_rewrite = self.archiver.get_record(longId=longId, property_type=property_type, version=self.version_string, use_cache=True)
+      archived_rewrite = self.archiver.get_record(longId=longId, property_type=property_type, version=self.version_string, lang=lang, use_cache=True)
       if archived_rewrite:        
         gpt_response = archived_rewrite['chatgpt_response']
         match = re.search(r'<housing>(.+?)</housing>', gpt_response)   # extract <housing>??</housing>
@@ -721,9 +732,21 @@ class LocallogicContentRewriter:
     if use_rag:
       avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)    
       if avg_price > 1.0:
-        params_dict = {'Average price on MLS®': int(avg_price)}
+        if lang == 'en':
+          params_dict = {'Average price on MLS®': int(avg_price)}
+        elif lang == 'fr':
+          params_dict = {'Prix moyen sur MLS®': int(avg_price)}
+        else:
+          raise ValueError(f'Unsupported language: {lang}')
+        
         if pct > 0.0:   # this is -1.0 if there's not enough listings for this to be statistically robust 
-          params_dict['Percentage of listings'] = pct
+          if lang == 'en':
+            params_dict['Percentage of listings'] = pct
+          elif lang == 'fr':
+            params_dict['Pourcentage des annonces'] = pct
+          else:
+            raise ValueError(f'Unsupported language: {lang}')
+          
         gpt_writer = property_type_gpt_writer
       else:
         # if avg_price or pct are zeros, possible if no listing for that city/province,  
@@ -747,13 +770,13 @@ class LocallogicContentRewriter:
     if mode == 'mock':   # For testing purpose and will not use GPT.
       avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
       if avg_price > 1.0:
-        rewritten_housing = f"[REPEAT housing] The average price of an MLS® real estate {property_type} listing in {city} is $ {int(avg_price)}."
+        rewritten_housing = f"[REPEAT housing {lang}] The average price of an MLS® real estate {property_type} listing in {city} is $ {int(avg_price)}."
         if pct > 0.0:
           rewritten_housing += f" The % of active {property_type} listings in {city} is {pct:.2f}%."
         else:
           rewritten_housing += f" Too few listings in {city} to calculate % of active listtings for {property_type}."
       else:
-        rewritten_housing = f"[REPEAT housing] No {property_type} listing in {city} currently to calculate metrics."
+        rewritten_housing = f"[REPEAT housing {lang}] No {property_type} listing in {city} currently to calculate metrics."
 
       rewrites = {'housing': rewritten_housing}
       rewrites['error_message'] = None
@@ -768,7 +791,7 @@ class LocallogicContentRewriter:
       user_prompt = messages[0]['content']
       chatgpt_response = self._extract_format_for_archive(rewrites)
 
-      self.archiver.add_record(longId=longId, property_type=property_type, version=self.version_string, user_prompt=user_prompt, chatgpt_response=chatgpt_response)
+      self.archiver.add_record(longId=longId, property_type=property_type, version=self.version_string, lang=lang, user_prompt=user_prompt, chatgpt_response=chatgpt_response)
 
     # ES Update or log error
     if rewrites['error_message'] is None:
@@ -1130,7 +1153,7 @@ class LocallogicContentRewriter:
       for property_type in self.property_types:
         if gpt_backup_version:
           # try to get any chatgpt_response from archive backup
-          archived_rewrite = self.archiver.get_record(longId=row.longId, property_type=property_type, version=gpt_backup_version)
+          archived_rewrite = self.archiver.get_record(longId=row.longId, property_type=property_type, version=gpt_backup_version, lang=lang)
           if archived_rewrite:
             chatgpt_response = archived_rewrite['chatgpt_response']            
             match = re.search(r'<housing>(.+?)</housing>', chatgpt_response)    # extract <housing>??</housing>
@@ -1226,12 +1249,19 @@ class LocallogicContentRewriter:
       # "overrides_fr",   # no french for v1
       ]
 
-    if incl_property_override:   # only for en for now.
+    if incl_property_override:   # only for en for v1
       selects.append("overrides_luxury_en")
       selects.append("overrides_condo_en")
       selects.append("overrides_semi_detached_en")
       selects.append("overrides_townhouse_en")
       selects.append("overrides_investment_en")
+
+      # add fr for v1.0.1
+      selects.append("overrides_luxury_fr")
+      selects.append("overrides_condo_fr")
+      selects.append("overrides_semi_detached_fr")
+      selects.append("overrides_townhouse_fr")
+      selects.append("overrides_investment_fr")
 
     if prov_code is None and city is None and longId is None:
       body = {"query": {"match_all": {}}, "_source": selects}
