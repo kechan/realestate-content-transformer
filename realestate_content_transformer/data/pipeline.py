@@ -112,7 +112,7 @@ class LocallogicContentRewriter:
     self.prov_codes = ["AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU", "ON", "PE", "QC", "SK", "YT"]
 
     # all property types
-    self.property_types = ['LUXURY', 'CONDO', 'SEMI-DETACHED', 'TOWNHOUSE', 'INVESTMENT']
+    self.property_types = ['LUXURY', 'CONDO', 'SEMI-DETACHED', 'TOWNHOUSE', 'INVESTMENT', 'RENTAL']
 
     # to store all content from geo, geo_details_en, geo_details_fr, and geo_overrides
     self.geo_all_content_df = pd.DataFrame()
@@ -617,12 +617,16 @@ class LocallogicContentRewriter:
     in cases where version integrity needs to be re-established.                    
     """
 
+
     property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],    # transport, services and character are not property type specific
                                         property_type=property_type)
+    
+    include_start_with_guideline = False if property_type == 'RENTAL' else True      
     non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],
-                                        property_type=None)      
+                                        property_type=None,
+                                        include_start_with_guideline=include_start_with_guideline)
     
     if geog_id is not None:
       geo_all_content_df = self.geo_all_content_df.q("geog_id == @geog_id")
@@ -701,25 +705,29 @@ class LocallogicContentRewriter:
 
     # first check if GPT rewrite of the targeted version is already in archive.
     # if found, then use it.
+
     if self.archiver:
       archived_rewrite = self.archiver.get_record(longId=longId, property_type=property_type, version=self.version_string, lang=lang, use_cache=True)
+
       if archived_rewrite:        
         gpt_response = archived_rewrite['chatgpt_response']
-        match = re.search(r'<housing>(.+?)</housing>', gpt_response)   # extract <housing>??</housing>
+        match = re.search(r'<housing>(.+?)</housing>', gpt_response, re.DOTALL)   # extract <housing>??</housing>
         if match and match.group(1):
           rewritten_housing = match.group(1)
           es_op_succeeded = self.update_es_doc_property_override(longId=longId, housing_content=rewritten_housing, property_type=property_type, lang=lang)
           self.log_info(f'Found archived rewrite for {longId} and version {self.version_string}.', longId=longId, geog_id=geog_id)
           return es_op_succeeded
-    
+
     if property_type_gpt_writer is None:
       property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],    # transport, services and character are not property type specific
                                         property_type=property_type)
     if non_property_type_gpt_writer is None:                                      
+      include_start_with_guideline = False if property_type == 'RENTAL' else True      
       non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
-                                        available_sections=['housing'],
-                                        property_type=None)                                      
+                                          available_sections=['housing'],
+                                          property_type=None,
+                                          include_start_with_guideline=include_start_with_guideline)                                     
                                                
       
     housing = section_contents['housing']
@@ -730,22 +738,30 @@ class LocallogicContentRewriter:
     
     # dynamic info & metric injection (RAG is used in v1)
     if use_rag:
-      avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)    
+      if property_type != 'RENTAL':
+        avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
+      else:
+        avg_price, _ = self.get_avg_lease_price(geog_id=geog_id, prov_code=prov_code, city=city)
+
       if avg_price > 1.0:
         if lang == 'en':
-          params_dict = {'Average price on MLS®': int(avg_price)}
+          if property_type != 'RENTAL':
+            params_dict = {'Average price on MLS®': int(avg_price)}
+          else:
+            params_dict = {'Average lease price on MLS®': int(avg_price)}
         elif lang == 'fr':
           params_dict = {'Prix moyen sur MLS®': int(avg_price)}
         else:
           raise ValueError(f'Unsupported language: {lang}')
         
-        if pct > 0.0:   # this is -1.0 if there's not enough listings for this to be statistically robust 
-          if lang == 'en':
-            params_dict['Percentage of listings'] = pct
-          elif lang == 'fr':
-            params_dict['Pourcentage des annonces'] = pct
-          else:
-            raise ValueError(f'Unsupported language: {lang}')
+        if property_type != 'RENTAL':     # Rental doesn't have 'Percentage of listings' metrics
+          if pct > 0.0:   # this is -1.0 if there's not enough listings for this to be statistically robust 
+            if lang == 'en':
+              params_dict['Percentage of listings'] = pct
+            elif lang == 'fr':
+              params_dict['Pourcentage des annonces'] = pct
+            else:
+              raise ValueError(f'Unsupported language: {lang}')
           
         gpt_writer = property_type_gpt_writer
       else:
@@ -768,13 +784,18 @@ class LocallogicContentRewriter:
         gpt_writer = non_property_type_gpt_writer
 
     if mode == 'mock':   # For testing purpose and will not use GPT.
-      avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
+      if property_type != 'RENTAL':
+        avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city, property_type=property_type)
+      else:
+        avg_price, _ = self.get_avg_lease_price(geog_id=geog_id, prov_code=prov_code, city=city)
+
       if avg_price > 1.0:
         rewritten_housing = f"[REPEAT housing {lang}] The average price of an MLS® real estate {property_type} listing in {city} is $ {int(avg_price)}."
-        if pct > 0.0:
-          rewritten_housing += f" The % of active {property_type} listings in {city} is {pct:.2f}%."
-        else:
-          rewritten_housing += f" Too few listings in {city} to calculate % of active listtings for {property_type}."
+        if property_type != 'RENTAL':  # Rental doesn't have 'Percentage of listings' metrics
+          if pct > 0.0:
+            rewritten_housing += f" The % of active {property_type} listings in {city} is {pct:.2f}%."
+          else:
+            rewritten_housing += f" Too few listings in {city} to calculate % of active listtings for {property_type}."
       else:
         rewritten_housing = f"[REPEAT housing {lang}] No {property_type} listing in {city} currently to calculate metrics."
 
@@ -881,64 +902,6 @@ class LocallogicContentRewriter:
     message = f"{longId_part}{geog_id_part}" + message
     logger.info(message)
   
-  def update_geo_overrides_params(self, prov_code=None):
-    '''
-    NOTE: this may not be needed if RAG is used. We are not storing any metrics 
-    '''
-    geo_all_content_df = self.geo_all_content_df.q("province == @prov_code") if prov_code is not None else self.geo_all_content_df
-    for k, row in geo_all_content_df.iterrows():
-      try:
-        longId = row.longId
-        geog_id = row.geog_id
-        province = row.province
-        city = row['name']  # or row.city
-
-        avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=province, city=city)
-        avg_price_desc_str = self.get_avg_price_explanation()
-        pc_of_listings_desc_str = self.get_pc_of_listings_explanation()
-
-        parameters = { "last_updated": datetime.now().date().isoformat()}
-
-        # if avg_price is not None:
-        #   parameters['avg_price'] = {"value": avg_price, "description": avg_price_desc_str}
-        # if pc_of_listings is not None:
-        #   parameters['pc_of_listings'] = {"value": pc_of_listings, "description": pc_of_listings_desc_str}
-
-        property_type = None   # for city, non property type specific 
-        parameters['avg_price'] = {"value": avg_price, 
-                                   "description": self.get_avg_price_explanation(property_type=property_type)}
-        
-        for property_type in self.property_types:
-          avg_price, pct, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=province, city=city, property_type=property_type)
-          parameters[f'{property_type.lower()}_avg_price'] = {"value": avg_price,
-                                                              "description": self.get_avg_price_explanation(property_type=property_type)}
-          parameters[f'{property_type.lower()}_pc_of_listings'] = {"value": pct,
-                                                                    "description": self.get_pc_of_listings_explanation(property_type=property_type)}
-
-        self._update_geo_overrides_params(longId=longId, params=parameters)
-
-      except (AttributeError, KeyError) as e:
-        self.log_error(str(e) + f'|| From update_geo_overrides_params(...) with prov_code {prov_code}', longId)        
-      except Exception as e:
-        self.log_error(str(e), longId)
-
-
-  def _update_geo_overrides_params(self, longId, params):
-    """
-    for a given longId, add param node to doc in rlp_content_geo_overrides_current index
-    NOTE: no INSERT func is provided, it is assumed the doc_id (longId) already exists in the index, otherwise, ES exception will be thrown.
-
-    #TODO: param value and desc can be abstracted by a dataclass?
-    """
-    update_script = {
-      "script": {
-        "source": "ctx._source.parameters = params.parameters;",
-        "params": {
-            "parameters": params
-        }
-      }
-    }
-    self._handle_ES_update(update_script, longId)
 
   # Methods to get dynamic info and metrics for RAG
 
@@ -959,7 +922,7 @@ class LocallogicContentRewriter:
               {"match": {"city": city}},
               {"match": {"provState": prov_code}},
               
-              {"match": {"transactionType": "SALE"}},
+              {"match": {"transactionType": "SALE"}},  # TODO: account for "BOTH", this is not high priority for now since BOTH but not LEASE is very small
               {"match": {"listingStatus": "ACTIVE"}}
             ]
           }
@@ -1032,7 +995,57 @@ class LocallogicContentRewriter:
 
     return round(avg_price, 0) if avg_price is not None else 0.0, pc_active, count_listings
 
-    
+  def get_avg_lease_price(self, geog_id, prov_code, city) -> Tuple[float, int]:
+    '''
+    Compute average price,  % of active listings, and # of active listings for a given geog_id, prov_code, city, w/wo property_type.
+    '''
+
+    def create_base_query():
+      return {
+        "size": 0,  # We don't need to retrieve documents, only aggregate data
+        # "size": 10000,  # We don't need to retrieve documents, only aggregate data
+        "query": {
+          "bool": {
+            "must": [
+              {"match": {"guid": geog_id}},
+              {"match": {"city": city}},
+              {"match": {"provState": prov_code}},
+              
+              {"terms": {"transactionType.keyword": ["LEASE", "BOTH"]}},  # Match either "LEASE" or "BOTH"
+              {"match": {"listingStatus": "ACTIVE"}},
+              {"range": {"leasePrice": {"gt": 0}}}
+            ]
+          }
+        }
+      }
+
+    # avg_price_query = copy.deepcopy(base_query)
+    avg_price_query = create_base_query()
+    avg_price_query["aggs"] = {
+      "average_price": {
+        "avg": {
+          "field": "leasePrice"
+        }
+      },
+      "count_listings": {
+        "value_count": {
+          "field": "jumpId"
+        }
+      }
+    }
+
+    avg_price_query['query']['bool']['must'].append({"terms": {"listingType.keyword": ["RES", "CONDO", "REC"]}})
+
+    # execute queries
+    response_avg_price = self.es_client.search(index=self.listing_index_name, body=avg_price_query)
+    avg_price = response_avg_price['aggregations']['average_price']['value']
+    count_listings = response_avg_price['aggregations']['count_listings']['value']
+
+    # Get individual documents
+    # documents = response_avg_price['hits']['hits']
+
+    return round(avg_price, 0) if avg_price is not None else 0.0, count_listings #, documents
+
   def get_avg_price_explanation(self, property_type=None):
     # TODO: Do we need to put this into ES?
     if property_type is None:
@@ -1156,7 +1169,7 @@ class LocallogicContentRewriter:
           archived_rewrite = self.archiver.get_record(longId=row.longId, property_type=property_type, version=gpt_backup_version, lang=lang)
           if archived_rewrite:
             chatgpt_response = archived_rewrite['chatgpt_response']            
-            match = re.search(r'<housing>(.+?)</housing>', chatgpt_response)    # extract <housing>??</housing>
+            match = re.search(r'<housing>(.+?)</housing>', chatgpt_response, re.DOTALL)    # extract <housing>??</housing>
             if match:
               rewritten_housing = match.group(1)
               update_status = self.update_es_doc_property_override(longId=longId, housing_content=rewritten_housing, property_type=property_type, lang=lang)
@@ -1250,18 +1263,12 @@ class LocallogicContentRewriter:
       ]
 
     if incl_property_override:   # only for en for v1
-      selects.append("overrides_luxury_en")
-      selects.append("overrides_condo_en")
-      selects.append("overrides_semi_detached_en")
-      selects.append("overrides_townhouse_en")
-      selects.append("overrides_investment_en")
+      for t in ['overrides_' + s.lower().replace('-', '_') + '_en' for s in self.property_types]:
+        selects.append(t)
 
       # add fr for v1.0.1
-      selects.append("overrides_luxury_fr")
-      selects.append("overrides_condo_fr")
-      selects.append("overrides_semi_detached_fr")
-      selects.append("overrides_townhouse_fr")
-      selects.append("overrides_investment_fr")
+      for t in ['overrides_' + s.lower().replace('-', '_') + '_fr' for s in self.property_types]:
+        selects.append(t)
 
     if prov_code is None and city is None and longId is None:
       body = {"query": {"match_all": {}}, "_source": selects}
@@ -1476,7 +1483,7 @@ class LocallogicContentRewriter:
     return report_df
 
   def metrics_report(self, prov_code: str) -> pd.DataFrame:
-    property_types = ['city', 'luxury', 'condo', 'semi', 'townhouse', 'investment']   # col friendly names
+    property_types = ['city', 'luxury', 'condo', 'semi', 'townhouse', 'investment', 'rental']   # col friendly names
     all_data = []
     for k, row in self.geo_all_content_df.q(f"province == '{prov_code}' and en_housing.notnull()").iterrows():
       geog_id = row.geog_id
@@ -1491,12 +1498,13 @@ class LocallogicContentRewriter:
       avg_price_semi, pct_semi, count_semi = self.get_avg_price_and_active_pct(geog_id=geog_id, city=city, prov_code=prov_code, property_type='SEMI-DETACHED')
       avg_price_townhouse, pct_townhouse, count_townhouse = self.get_avg_price_and_active_pct(geog_id=geog_id, city=city, prov_code=prov_code, property_type='TOWNHOUSE')
       avg_price_investment, pct_investment, count_investment = self.get_avg_price_and_active_pct(geog_id=geog_id, city=city, prov_code=prov_code, property_type='INVESTMENT')
+      avg_price_rental, count_rental = self.get_avg_lease_price(geog_id=geog_id, city=city, prov_code=prov_code)
 
-      avg_prices = [avg_price, avg_price_luxury, avg_price_condo, avg_price_semi, avg_price_townhouse, avg_price_investment]
+      avg_prices = [avg_price, avg_price_luxury, avg_price_condo, avg_price_semi, avg_price_townhouse, avg_price_investment, avg_price_rental]
       # avg_prices = [f"{price:,.0f}" if price is not None else None for price in avg_prices]
 
-      pct_actives = [pct, pct_luxury, pct_condo, pct_semi, pct_townhouse, pct_investment]
-      counts = [count_city, count_luxury, count_condo, count_semi, count_townhouse, count_investment]
+      pct_actives = [pct, pct_luxury, pct_condo, pct_semi, pct_townhouse, pct_investment, None]
+      counts = [count_city, count_luxury, count_condo, count_semi, count_townhouse, count_investment, count_rental]
 
       data = {'longId': longId, 'city': city, 'prov_code': prov_code}
       for i, prop_type in enumerate(property_types):

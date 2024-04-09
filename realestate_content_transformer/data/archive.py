@@ -34,10 +34,11 @@ class ChatGPTRewriteArchiver:
     return "pong"
 
   def add_record(self, longId: str, property_type: str, version: str, lang: str, user_prompt: str, chatgpt_response: str) -> None:
-    if property_type not in ['LUXURY', 'CONDO', 'SEMI-DETACHED', 'TOWNHOUSE', 'INVESTMENT']:
+    if property_type not in ['LUXURY', 'CONDO', 'SEMI-DETACHED', 'TOWNHOUSE', 'INVESTMENT', 'RENTAL']:
       raise ValueError(f"Invalid property_type {property_type}.")
 
     key = f"rewrite:{longId}:{property_type}:{version}:{lang}"
+
     value = {
       'version': version,
       'user_prompt': user_prompt,

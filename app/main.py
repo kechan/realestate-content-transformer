@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-import logging, time, json
+import logging, time, json, subprocess
 
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +21,7 @@ from realestate_content_transformer.utils.misc import archive_logs
 LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
 LLM = 'gpt-4-1106-preview'
 
-celery_app = Celery('myapp', broker='pyamqp://guest@localhost//')
+# celery_app = Celery('myapp', broker='pyamqp://guest@localhost//')
 app = FastAPI()
 
 class ProvinceCode(str, Enum):
@@ -44,11 +44,12 @@ class RewriterConfig(BaseModel):
   es_port: int = Field(..., example=9200, description="Elasticsearch port. Default is 9201 if not provided.")
   
 class RunConfig(RewriterConfig):
+  yaml_path: str = Field(..., example="/home/jupyter/prod_config.yaml", description="The full path to the yaml config file.")
   prov_code: Optional[ProvinceCode] = Field(None, example="BC", description="Optional province code. Either prov_code or geog_id is required.")
   geog_id: Optional[str] = Field(None, example="g30_dxbcrsms", description="Optional geographic ID to process a specific location. If not provided, the script processes the entire province.")
   lang: str = Field('en', example='en', description='Language, Default is "en" if not provided.')  
   archiver_file: Optional[str] = Field(None, example="./archive_rewrites.txt", description='The filepath to the archiver file. Default is "./archive_rewrites.txt" if not provided.')
-  force_rewrite: bool = Field(False, example=False, description='Force rewrite regardless of version')  
+  force_rewrite: Optional[str] = Field(None, example=False, description='Force rewrite regardless of version')  
 
 def get_run_entry_df(csv_file='run_entry_table.csv'):
   try:
@@ -86,6 +87,7 @@ def get_temp_filename():
 def read_root():
   return {"message": "Welcone to Local Logic Content Rewriter Service Endpoints"}
 
+'''
 @celery_app.task
 def main(config: RunConfig) -> Tuple[int, float]:
   # check openai health
@@ -153,9 +155,10 @@ def main(config: RunConfig) -> Tuple[int, float]:
 def get_task_status(task_id: str):
   task = AsyncResult(task_id, app=celery_app)
   return {"task_id": str(task.id), "task_status": task.status}
+'''
 
 @app.post("/main")
-def run_main(config: RunConfig):
+def run_main(config: RunConfig) -> JSONResponse:
   # Check that either prov_code or geog_id is provided but not both
   if not (config.prov_code or config.geog_id):
     raise HTTPException(status_code=400, detail="Either prov_code or geog_id must be provided.")
@@ -164,11 +167,21 @@ def run_main(config: RunConfig):
 
   # Check that archiver_file is not an existing directory
   if Path(config.archiver_file).is_dir():
-    raise HTTPException(status_code=400, detail=f"The archiver_file {config.archiver_file} is an existing directory. Please provide a filename.")
+    raise HTTPException(status_code=400, detail=f"The archiver_file {config.archiver_file} is a directory. Please provide a filename.")
   
-  task = main.delay(config)
+  # launch the python script via OS command
+  # python run_locallogic_content_rewriter.py --config prod_config.yaml
 
-  return {"task_id": str(task.id)}
+  command = ["python", "run_locallogic_content_rewriter.py", "--config", "prod_config.yaml"]
+  process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  stdout, stderr = process.communicate()
+
+  if process.returncode != 0:
+    # If the subprocess failed, raise an HTTPException with the stderr
+    raise HTTPException(status_code=500, detail=stderr.decode())
+
+
+  return JSONResponse(content={"message": "Job launched"})
 
 @app.get("/report/{version}")
 async def generate_report(version: str, config: RewriterConfig = Depends()):

@@ -10,7 +10,7 @@ es_port: 9201              # Elasticsearch port, default is 9201
 geog_id: "g30_f85qwk5e"  # Optional geographic ID, in normal run, if provided prov_code will be ignored, pe_montague
 
 lang: en                   # Language, default is en
-log_level: ERROR           # Logging Level, default is ERROR
+log_level: INFO           # Logging Level, default is ERROR
 
 # Recovery mode settings (used with --rerun)
 # Uncomment and set appropriately when in recovery mode.
