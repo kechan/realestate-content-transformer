@@ -617,16 +617,19 @@ class LocallogicContentRewriter:
     in cases where version integrity needs to be re-established.                    
     """
 
-
     property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],    # transport, services and character are not property type specific
-                                        property_type=property_type)
+                                        property_type=property_type
+                                        )
     
-    include_start_with_guideline = False if property_type == 'RENTAL' else True      
+    # include_start_with_guideline = False if property_type == 'RENTAL' else True   
+    # This writer is for use to write relatively property agnostic content due to lack of listings or stats for that specific property type.     
+  
     non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],
                                         property_type=None,
-                                        include_start_with_guideline=include_start_with_guideline)
+                                        transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE'
+                                        )
     
     if geog_id is not None:
       geo_all_content_df = self.geo_all_content_df.q("geog_id == @geog_id")
@@ -670,6 +673,7 @@ class LocallogicContentRewriter:
                                               non_property_type_gpt_writer=non_property_type_gpt_writer, 
                                               property_type_gpt_writer=property_type_gpt_writer,
                                               use_rag=use_rag,
+                                              force_rewrite=force_rewrite,
                                               mode=mode,
                                               **section_contents)
         
@@ -695,7 +699,7 @@ class LocallogicContentRewriter:
     self, 
     geog_id, longId, city, prov_code, property_type='CONDO', lang='en', 
     non_property_type_gpt_writer=None, property_type_gpt_writer=None, 
-    use_rag=True, mode='prod', **section_contents) -> bool:
+    use_rag=True, force_rewrite=False, mode='prod', **section_contents) -> bool:
     """
     Given a geog_id, longId, city, and section_contents, rewrite the content and update the geo_overrides_index_name index 
     keyed by longId.
@@ -703,10 +707,10 @@ class LocallogicContentRewriter:
     Return: a bool to indicate if rewrite is successful or not.
     """
 
-    # first check if GPT rewrite of the targeted version is already in archive.
-    # if found, then use it.
+    # if this is not force rewrite, first check if GPT rewrite of the targeted version is already in archive.
+    # if found, then use it without calling GPT.
 
-    if self.archiver:
+    if not force_rewrite and self.archiver:
       archived_rewrite = self.archiver.get_record(longId=longId, property_type=property_type, version=self.version_string, lang=lang, use_cache=True)
 
       if archived_rewrite:        
@@ -722,12 +726,15 @@ class LocallogicContentRewriter:
       property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],    # transport, services and character are not property type specific
                                         property_type=property_type)
-    if non_property_type_gpt_writer is None:                                      
-      include_start_with_guideline = False if property_type == 'RENTAL' else True      
+                                            
+    if non_property_type_gpt_writer is None:
+      # This writer is for use to write relatively property agnostic content due to lack of listings or stats for that specific property type.  
+      # include_start_with_guideline = False if property_type == 'RENTAL' else True      
       non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                           available_sections=['housing'],
                                           property_type=None,
-                                          include_start_with_guideline=include_start_with_guideline)                                     
+                                          transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE'
+                                          )                                     
                                                
       
     housing = section_contents['housing']
