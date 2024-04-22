@@ -619,7 +619,8 @@ class LocallogicContentRewriter:
 
     property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],    # transport, services and character are not property type specific
-                                        property_type=property_type
+                                        property_type=property_type,
+                                        sentence_limit = 3 if property_type == 'RENTAL' else None    # rental rewrite shouldnt be too long
                                         )
     
     # include_start_with_guideline = False if property_type == 'RENTAL' else True   
@@ -628,7 +629,8 @@ class LocallogicContentRewriter:
     non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],
                                         property_type=None,
-                                        transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE'
+                                        transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE',
+                                        sentence_limit = 3 if property_type == 'RENTAL' else None    # rental rewrite shouldnt be too long
                                         )
     
     if geog_id is not None:
@@ -725,7 +727,9 @@ class LocallogicContentRewriter:
     if property_type_gpt_writer is None:
       property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],    # transport, services and character are not property type specific
-                                        property_type=property_type)
+                                        property_type=property_type,
+                                        sentence_limit = 3 if property_type == 'RENTAL' else None
+                                        )
                                             
     if non_property_type_gpt_writer is None:
       # This writer is for use to write relatively property agnostic content due to lack of listings or stats for that specific property type.  
@@ -733,7 +737,8 @@ class LocallogicContentRewriter:
       non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                           available_sections=['housing'],
                                           property_type=None,
-                                          transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE'
+                                          transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE',
+                                          sentence_limit = 3 if property_type == 'RENTAL' else None
                                           )                                     
                                                
       
