@@ -24,7 +24,7 @@ from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 # 1. bulk upsert (see https://chat.openai.com/share/5038f03e-313f-4cce-a0cc-f52fad739d1e)
 
 LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
-LLM = 'gpt-4-1106-preview'
+LLM = 'gpt-4o'   # 'gpt-4-1106-preview'
 
 class BulkUpserter:
   # Handles bulk updates to an Elasticsearch index, with error logging and optional ID mapping.
@@ -624,7 +624,8 @@ class LocallogicContentRewriter:
                                         )
     
     # include_start_with_guideline = False if property_type == 'RENTAL' else True   
-    # This writer is for use to write relatively property agnostic content due to lack of listings or stats for that specific property type.     
+    # This writer is for use to write relatively property agnostic content due to lack of listings or 
+    # stats for that specific property type.     
   
     non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],
