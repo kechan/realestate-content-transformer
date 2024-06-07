@@ -865,6 +865,32 @@ class LocallogicContentRewriter:
     }
     return self._handle_ES_update(update_script, longId)
 
+  def delete_es_doc_property_override(self, longId: str, property_type: str, lang: str = 'en') -> bool:
+    """
+    Delete the override content for a given property type and language from the Elasticsearch document.
+
+    Args:
+    longId (str): The identifier of the document in Elasticsearch.
+    property_type (str): The property type for which to delete overrides (e.g., 'semi_detached').
+    lang (str): The language of the override content to delete (default is 'en').
+
+    Returns:
+    bool: True if the deletion was successful, False otherwise.
+    """
+
+    property_type_lower = property_type.lower().replace('-', '_')
+    update_script = {
+        "script": {
+            "source": f"""
+                if (ctx._source.containsKey('overrides_{property_type_lower}_{lang}')) {{
+                    ctx._source.remove('overrides_{property_type_lower}_{lang}');
+                }}
+            """,
+            "lang": "painless"
+        }
+    }
+    return self._handle_ES_update(update_script, longId)
+
 
   def _handle_ES_update(self, update_script, longId) -> bool:
     """
