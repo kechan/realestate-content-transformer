@@ -623,15 +623,15 @@ class LocallogicContentRewriter:
                                         sentence_limit = 3 if property_type == 'RENTAL' else None    # rental rewrite shouldnt be too long
                                         )
     
-    # include_start_with_guideline = False if property_type == 'RENTAL' else True   
-    # This writer is for use to write relatively property agnostic content due to lack of listings or 
-    # stats for that specific property type.     
+    # This writer is for use to write property agnostic content due to lack of listings or stats for that specific property type.  
+    # Use "include_start_with_guideline = False" to suppress the guideline "always start with..."  
   
     non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                         available_sections=['housing'],
                                         property_type=None,
                                         transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE',
-                                        sentence_limit = 3 if property_type == 'RENTAL' else None    # rental rewrite shouldnt be too long
+                                        sentence_limit = 3 if property_type == 'RENTAL' else None,    # rental rewrite shouldnt be too long
+                                        include_start_with_guideline=False
                                         )
     
     if geog_id is not None:
@@ -733,13 +733,14 @@ class LocallogicContentRewriter:
                                         )
                                             
     if non_property_type_gpt_writer is None:
-      # This writer is for use to write relatively property agnostic content due to lack of listings or stats for that specific property type.  
-      # include_start_with_guideline = False if property_type == 'RENTAL' else True      
+      # This writer is for use to write property agnostic content due to lack of listings or stats for that specific property type.  
+      # Use "include_start_with_guideline = False" to suppress the guideline "always start with..."
       non_property_type_gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model,
                                           available_sections=['housing'],
                                           property_type=None,
                                           transaction_type = 'SALE' if property_type != 'RENTAL' else 'LEASE',
-                                          sentence_limit = 3 if property_type == 'RENTAL' else None
+                                          sentence_limit = 3 if property_type == 'RENTAL' else None,
+                                          include_start_with_guideline=False
                                           )                                     
                                                
       

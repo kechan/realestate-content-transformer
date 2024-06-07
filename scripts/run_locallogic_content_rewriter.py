@@ -10,7 +10,8 @@ from realestate_content_transformer.data.pipeline import LocallogicContentRewrit
 from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 
 LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
-LLM = 'gpt-4-1106-preview'
+# LLM = 'gpt-4-1106-preview'
+LLM = 'gpt-4o'
 
 def load_config(yaml_config_file):
   with open(yaml_config_file, 'r') as f:
