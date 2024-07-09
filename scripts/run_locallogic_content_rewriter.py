@@ -24,7 +24,7 @@ def test_openai_health():
   return status
 
 
-def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, force_rewrite=False):
+def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, property_type_filter=None, force_rewrite=False):
   # check openai health
   # will immediately exit if not healthy and log the error
   # NOTE: within rewrite_property_types, a consecutive failure count is used to halt if there are too many consecutive failures (due mostly to openai api)
@@ -49,7 +49,10 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
 
     city_rewrites_count = ll_rewriter.rewrite_cities(prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag)
 
-    for property_type in ll_rewriter.property_types:
+    # Check if a specific property type is provided
+    property_types_to_process = [property_type_filter] if property_type_filter else ll_rewriter.property_types
+
+    for property_type in property_types_to_process:
       property_type_rewrites_count += ll_rewriter.rewrite_property_types(property_type=property_type, prov_code=prov_code, geog_id=geog_id, lang=lang, use_rag=use_rag, force_rewrite=force_rewrite)
 
   except Exception as e:
@@ -122,6 +125,7 @@ if __name__ == '__main__':
                     help='Optional geographic ID to process a specific location. If not provided, the script processes the entire province.')
 
 
+  parser.add_argument('--property_type', type=str, help='Optional specific property type to rewrite. If not provided, all property types are processed.')
   parser.add_argument('--lang', choices=['en', 'fr'], help='Language, Default is "en" if not provided.')
   parser.add_argument('--log_level', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET'], help='Logging Level, default is ERROR')
 
@@ -155,6 +159,8 @@ if __name__ == '__main__':
   # Ensure only one of prov_code or geog_id is provided
   # if prov_code and geog_id:
   #   raise ValueError("Only one of prov_code or geog_id should be provided.")
+
+  property_type_filter = args.property_type if args.property_type is not None else config.get('property_type')
 
   lang = args.lang if args.lang is not None else config.get('lang', 'en')
   log_level = args.log_level if args.log_level is not None else config.get('log_level', 'ERROR')
@@ -204,6 +210,7 @@ if __name__ == '__main__':
     rewrites_count = main(
       es_host=es_host, es_port=es_port, 
       prov_code=prov_code, geog_id=geog_id, 
+      property_type_filter=property_type_filter,
       lang=lang, 
       archiver_file=archiver_file, 
       force_rewrite=force_rewrite
