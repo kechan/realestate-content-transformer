@@ -36,7 +36,7 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
     es_host=es_host, 
     es_port=es_port, 
     llm_model=LLM,
-    simple_append=True,
+    simple_append=False,
     archiver_filepath=archiver_file)
     # archiver_filepath=Path.home()/'tmp'/'dev_rewrites.txt')
 

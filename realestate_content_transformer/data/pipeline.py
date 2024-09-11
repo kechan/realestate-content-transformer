@@ -393,7 +393,11 @@ class LocallogicContentRewriter:
     if not self.simple_append:   # need to enlist GPT help.
       gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model, 
                                          available_sections=['housing'],    #'transport', 'services', 'character'],  (not needed for v1)
-                                         property_type=None)
+                                         property_type=None,
+                                         transaction_type='SALE',
+                                         sentence_limit=None,
+                                         include_start_with_guideline=True
+                                         )
 
     if geog_id is not None:
       geo_all_content_df = self.geo_all_content_df.q("geog_id == @geog_id")
@@ -470,15 +474,15 @@ class LocallogicContentRewriter:
         avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city)
         if avg_price > 1.0:
           if lang == 'en':
-            overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is $ {avg_price:,.0f}."
+            overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is ${avg_price:,.0f}."
           elif lang == 'fr':
-            overriden_housing = housing + f" Le prix moyen d'une inscription immobilière MLS® à {city} est de $ {avg_price:,.0f}."
+            overriden_housing = housing + f" Le prix moyen d'une inscription immobilière MLS® à {city} est de ${avg_price:,.0f}."
           else:
             raise ValueError(f'Unsupported language: {lang}')
         else:
           overriden_housing = housing    # no override, this can happen if there's no listing for the city, province.
       else:
-        overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is $ [avg_price]"
+        overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is $[avg_price]"
 
       rewrites['error_message'] = None    # simple append shold never have problem.
       rewrites['housing'] = overriden_housing
@@ -487,7 +491,10 @@ class LocallogicContentRewriter:
       if gpt_writer is None:   # if not provided, create one on the fly.
         gpt_writer = LocalLogicGPTRewriter(llm_model=self.llm_model, 
                                            available_sections=['housing'],            #'transport', 'services', 'character'], not needed for v1
-                                           property_type=None)  # for city level
+                                           property_type=None,
+                                           transaction_type='SALE',
+                                           sentence_limit=None,
+                                           include_start_with_guideline=True)  # for city level
 
       # housing, transport, services, character = section_contents['housing'], section_contents['transport'], section_contents['services'], section_contents['character']
       housing = section_contents['housing']
@@ -495,12 +502,15 @@ class LocallogicContentRewriter:
       if use_rag:
         # additional metrics to inject into prompt (using RAG)          
         avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city)
-        if lang == 'en':
-          params_dict = {'Average price on MLS®': avg_price}
-        elif lang == 'fr':
-          params_dict = {'Prix moyen sur MLS®': avg_price}
+        if avg_price > 1.0:
+          if lang == 'en':
+            params_dict = {'Average price on MLS®': avg_price}
+          elif lang == 'fr':
+            params_dict = {'Prix moyen sur MLS®': avg_price}
+          else:
+            raise ValueError(f'Unsupported language: {lang}')
         else:
-          raise ValueError(f'Unsupported language: {lang}')
+          params_dict = None  # we dont want avg price of 0.0
 
       else: # use placeholder, instruct to use placeholders while adding new information
         avg_price_explanation = self.get_avg_price_explanation()
