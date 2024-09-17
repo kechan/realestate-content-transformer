@@ -2,9 +2,10 @@ import argparse
 import re
 import subprocess
 import pandas as pd
-import time
 from pathlib import Path
 from datetime import datetime
+import time
+import glob
 
 def load_run_entries(year, month):
     df = pd.read_csv('run_entry_table.csv')
@@ -14,9 +15,9 @@ def load_run_entries(year, month):
             (df['prov_code'].str.len() == 2))
     return df[mask]
 
-def get_log_filename(row):
-    timestamp = row['timestamp'].strftime('%Y%m%d_%H%M%S')
-    return f"{timestamp}_run_{row['run_number']}_{row['prov_code']}_{row['lang']}.log"
+def get_log_filenames(row):
+    pattern = f"*_run_{row['run_number']}_{row['prov_code']}_{row['lang']}.log"
+    return glob.glob(pattern)
 
 def extract_failed_geog_ids(log_filename):
     error_pattern = re.compile(r'\[ERROR\].*\[geog_id: ([^\]]+)\]')
@@ -31,11 +32,11 @@ def extract_failed_geog_ids(log_filename):
     except FileNotFoundError:
         print(f"Warning: Log file '{log_filename}' not found.")
 
-    return list(failed_geog_ids)
+    return failed_geog_ids
 
 def rerun_failed_geog_ids(failed_geog_ids, config_file):
     for i, geog_id in enumerate(failed_geog_ids, 1):
-        print(f"Rerunning for geog_id: {geog_id}")
+        print(f"Rerunning for geog_id: {geog_id} ({i}/{len(failed_geog_ids)})")
         subprocess.run([
             "python", "run_locallogic_content_rewriter.py",
             "--config", config_file,
@@ -61,11 +62,11 @@ def main():
     all_failed_geog_ids = set()
 
     for _, row in run_entries.iterrows():
-        log_filename = get_log_filename(row)
-        print(f"Processing log file: {log_filename}")
-        
-        failed_geog_ids = extract_failed_geog_ids(log_filename)
-        all_failed_geog_ids.update(failed_geog_ids)
+        log_filenames = get_log_filenames(row)
+        for log_filename in log_filenames:
+            print(f"Processing log file: {log_filename}")
+            failed_geog_ids = extract_failed_geog_ids(log_filename)
+            all_failed_geog_ids.update(failed_geog_ids)
 
     if not all_failed_geog_ids:
         print("No failed geog_ids found in the processed log files.")
