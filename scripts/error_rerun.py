@@ -2,6 +2,7 @@ import argparse
 import re
 import subprocess
 import pandas as pd
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -33,13 +34,16 @@ def extract_failed_geog_ids(log_filename):
     return list(failed_geog_ids)
 
 def rerun_failed_geog_ids(failed_geog_ids, config_file):
-    for geog_id in failed_geog_ids:
+    for i, geog_id in enumerate(failed_geog_ids, 1):
         print(f"Rerunning for geog_id: {geog_id}")
         subprocess.run([
             "python", "run_locallogic_content_rewriter.py",
             "--config", config_file,
             "--geog_id", geog_id
         ])
+        if i < len(failed_geog_ids):
+            print("Waiting for 40 seconds before the next rerun...")
+            time.sleep(40)
 
 def main():
     parser = argparse.ArgumentParser(description="Process log files and rerun failed geog_ids for a specific month")
