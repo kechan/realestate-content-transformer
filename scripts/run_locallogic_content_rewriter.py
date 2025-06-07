@@ -9,7 +9,7 @@ from datetime import datetime
 from realestate_content_transformer.data.pipeline import LocallogicContentRewriter
 from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 
-LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
+LIGHT_WEIGHT_LLM = 'gpt-4o'
 # LLM = 'gpt-4-1106-preview'
 LLM = 'gpt-4o'
 
