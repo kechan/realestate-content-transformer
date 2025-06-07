@@ -23,7 +23,8 @@ from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 # Later enhancement
 # 1. bulk upsert (see https://chat.openai.com/share/5038f03e-313f-4cce-a0cc-f52fad739d1e)
 
-LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
+# LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
+LIGHT_WEIGHT_LLM = 'gpt-4o'
 LLM = 'gpt-4o'   # 'gpt-4-1106-preview'
 
 class BulkUpserter:
