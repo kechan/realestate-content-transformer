@@ -475,9 +475,13 @@ class LocallogicContentRewriter:
         avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city)
         if avg_price > 1.0:
           if lang == 'en':
-            overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is ${avg_price:,.0f}."
+            # overriden_housing = housing + f" The average price of an MLS® real estate listing in {city} is ${avg_price:,.0f}."
+            # Josh CR July 2025
+            overriden_housing = f"Properties for sale in {city} have an average MLS® listing price of $ {avg_price:,.0f}. {housing}"
           elif lang == 'fr':
-            overriden_housing = housing + f" Le prix moyen d'une inscription immobilière MLS® à {city} est de ${avg_price:,.0f}."
+            # overriden_housing = housing + f" Le prix moyen d'une inscription immobilière MLS® à {city} est de ${avg_price:,.0f}."
+            # Josh CR July 2025
+            overriden_housing = f"Les propriétés à vendre à {city} ont un prix moyen de $ {avg_price:,.0f} sur MLS®. {housing}"
           else:
             raise ValueError(f'Unsupported language: {lang}')
         else:
