@@ -503,6 +503,9 @@ class LocallogicContentRewriter:
 
       # housing, transport, services, character = section_contents['housing'], section_contents['transport'], section_contents['services'], section_contents['character']
       housing = section_contents['housing']
+      if housing is None or len(housing.strip()) == 0:     # no housing in original content, skip and do nothing, return False so doesnt go towards counting
+        self.log_info(f"No original locallogic housing content found for {lang}.", longId=longId, geog_id=geog_id)
+        return False
 
       if use_rag:
         # additional metrics to inject into prompt (using RAG)          
