@@ -17,6 +17,31 @@ def load_config(yaml_config_file):
   with open(yaml_config_file, 'r') as f:
     return yaml.safe_load(f)
 
+def load_geog_ids_from_file(file_path):
+  """
+  Load comma-delimited geog_ids from file.
+  Supports: single line CSV, multi-line, or one per line.
+  """
+  file_path = Path(file_path)
+  if not file_path.exists():
+    raise FileNotFoundError(f"geog_ids file not found: {file_path}")
+
+  with open(file_path, 'r') as f:
+    content = f.read()
+
+  # Split by commas and newlines, strip whitespace, filter empty
+  geog_ids = [
+    geog_id.strip()
+    for geog_id in content.replace('\n', ',').split(',')
+    if geog_id.strip()
+  ]
+
+  if not geog_ids:
+    raise ValueError(f"No geog_ids found in file: {file_path}")
+
+  logging.info(f"Loaded {len(geog_ids)} geog_ids from {file_path}")
+  return geog_ids
+
 def test_openai_health():
   ll_gpt_writer = LocalLogicGPTRewriter(llm_model=LIGHT_WEIGHT_LLM, available_sections=['housing'], property_type=None)
   status = ll_gpt_writer.test_openai_health()
@@ -24,13 +49,14 @@ def test_openai_health():
   return status
 
 
-def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, property_type_filter=None, force_rewrite=False):
+def main_single_location(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, property_type_filter=None, force_rewrite=False):
+  """Process a single province or single geog_id (existing logic)."""
   # check openai health
   # will immediately exit if not healthy and log the error
   # NOTE: within rewrite_property_types, a consecutive failure count is used to halt if there are too many consecutive failures (due mostly to openai api)
   if not test_openai_health():
     logging.error("OpenAI API is not healthy. Exiting...")
-    return
+    return 0
 
   ll_rewriter = LocallogicContentRewriter(
     es_host=es_host, 
@@ -60,6 +86,50 @@ def main(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_fil
 
   finally:
     return city_rewrites_count + property_type_rewrites_count
+
+def main(es_host, es_port, prov_code=None, geog_id=None, geog_ids_list=None,
+         lang='en', archiver_file=None, property_type_filter=None, force_rewrite=False):
+  """
+  Main orchestrator: handles single prov_code, single geog_id, or multiple geog_ids.
+  """
+  # Case 1: Multiple geog_ids from list
+  if geog_ids_list is not None and len(geog_ids_list) > 0:
+    logging.info(f"Batch processing {len(geog_ids_list)} geog_ids")
+    total_rewrites = 0
+
+    for idx, current_geog_id in enumerate(geog_ids_list, 1):
+      logging.info(f"Processing geog_id {idx}/{len(geog_ids_list)}: {current_geog_id}")
+
+      try:
+        rewrites = main_single_location(
+          es_host=es_host, es_port=es_port,
+          prov_code=None,  # Force None when batch processing
+          geog_id=current_geog_id,
+          lang=lang,
+          archiver_file=archiver_file,
+          property_type_filter=property_type_filter,
+          force_rewrite=force_rewrite
+        )
+        total_rewrites += rewrites
+        logging.info(f"Completed {current_geog_id}: {rewrites} rewrites")
+
+      except Exception as e:
+        logging.exception(f"Failed processing {current_geog_id}: %s", e)
+        # Continue with next geog_id
+        continue
+
+    logging.info(f"Batch complete: {total_rewrites} total rewrites")
+    return total_rewrites
+
+  # Case 2: Single province or single geog_id (original behavior)
+  else:
+    return main_single_location(
+      es_host=es_host, es_port=es_port,
+      prov_code=prov_code, geog_id=geog_id,
+      lang=lang, archiver_file=archiver_file,
+      property_type_filter=property_type_filter,
+      force_rewrite=force_rewrite
+    )
 
 def rerun_to_recover(es_host, es_port, prov_code, lang, run_num, gpt_backup_version=None, archiver_file=None):
   # check openai health
@@ -115,15 +185,17 @@ if __name__ == '__main__':
   parser.add_argument('--es_host', help='Elasticsearch host. Default is "localhost" if not provided.')
   parser.add_argument('--es_port', type=int, help='Elasticsearch port. Default is 9201 if not provided.')
 
-  # Creating a mutually exclusive group for prov_code and geog_id
+  # Creating a mutually exclusive group for prov_code, geog_id, and geog_ids_file
   group = parser.add_mutually_exclusive_group(required=False)
 
-  group.add_argument('--prov_code', type=str, choices=["AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU", "ON", "PE", "QC", "SK", "YT"], 
-                    help='Optional province code. Either prov_code or geog_id is required.')
-  
-  group.add_argument('--geog_id', type=str, 
-                    help='Optional geographic ID to process a specific location. If not provided, the script processes the entire province.')
+  group.add_argument('--prov_code', type=str, choices=["AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU", "ON", "PE", "QC", "SK", "YT"],
+                    help='Process all locations in a specific province. Mutually exclusive with --geog_id and --geog_ids_file.')
 
+  group.add_argument('--geog_id', type=str,
+                    help='Process a single geographic location by ID. Mutually exclusive with --prov_code and --geog_ids_file.')
+
+  group.add_argument('--geog_ids_file', type=str,
+                    help='Process multiple locations from a file (comma-delimited geog_ids). Mutually exclusive with --prov_code and --geog_id.')
 
   parser.add_argument('--property_type', type=str, help='Optional specific property type to rewrite. If not provided, all property types are processed.')
   parser.add_argument('--lang', choices=['en', 'fr'], help='Language, Default is "en" if not provided.')
@@ -147,18 +219,23 @@ if __name__ == '__main__':
   es_host = args.es_host if args.es_host is not None else config.get('es_host', 'localhost')
   es_port = args.es_port if args.es_port is not None else config.get('es_port', 9201)
 
-  # For prov_code and geog_id, since they are mutually exclusive,
-  # check if they are provided in command line args or YAML config
-
+  # For prov_code, geog_id, and geog_ids_file - they are mutually exclusive
+  # Get values from CLI or YAML
   prov_code = args.prov_code if args.prov_code is not None else config.get('prov_code')
   geog_id = args.geog_id if args.geog_id is not None else config.get('geog_id')
+  geog_ids_file = args.geog_ids_file if args.geog_ids_file is not None else config.get('geog_ids_file')
 
-  if not (prov_code or geog_id):
-    raise ValueError("Either --prov_code or --geog_id must be provided.")
+  # Parse geog_ids from file if provided
+  geog_ids_list = None
+  if geog_ids_file is not None:
+    geog_ids_list = load_geog_ids_from_file(geog_ids_file)
 
-  # Ensure only one of prov_code or geog_id is provided
-  # if prov_code and geog_id:
-  #   raise ValueError("Only one of prov_code or geog_id should be provided.")
+  # Validation: mutually exclusive
+  provided = sum([prov_code is not None, geog_id is not None, geog_ids_list is not None])
+  if provided == 0:
+    raise ValueError("Must provide one of: prov_code, geog_id, or geog_ids_file")
+  elif provided > 1:
+    raise ValueError("Only one of prov_code, geog_id, or geog_ids_file allowed")
 
   property_type_filter = args.property_type if args.property_type is not None else config.get('property_type')
 
@@ -177,11 +254,14 @@ if __name__ == '__main__':
     print("Cannot invoke rerun & recovery for a specific location. Exiting...")
     sys.exit(1)
 
-  if Path(archiver_file).is_dir(): 
+  if Path(archiver_file).is_dir():
     print(f"The archiver_file {archiver_file} is an existing dir. Please provide a filename. Exiting...")
     sys.exit(1)
 
-  location_identifier = geog_id if geog_id else prov_code
+  if geog_ids_list is not None:
+    location_identifier = f"batch_{len(geog_ids_list)}_geogs"
+  else:
+    location_identifier = geog_id if geog_id else prov_code
 
   if not rerun: 
     csv_file = 'run_entry_table.csv'
@@ -208,11 +288,12 @@ if __name__ == '__main__':
 
     start_time = time.time()
     rewrites_count = main(
-      es_host=es_host, es_port=es_port, 
-      prov_code=prov_code, geog_id=geog_id, 
+      es_host=es_host, es_port=es_port,
+      prov_code=prov_code, geog_id=geog_id,
+      geog_ids_list=geog_ids_list,
       property_type_filter=property_type_filter,
-      lang=lang, 
-      archiver_file=archiver_file, 
+      lang=lang,
+      archiver_file=archiver_file,
       force_rewrite=force_rewrite
     )
     end_time = time.time()
