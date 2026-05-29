@@ -1,6 +1,6 @@
 from typing import Union, Tuple, Dict, List
 
-import time, sys, gc, random, copy, traceback
+import os, time, sys, gc, random, copy, traceback
 from collections import OrderedDict
 import numpy as np
 import pandas as pd
@@ -9,6 +9,7 @@ from datetime import datetime
 from elasticsearch import Elasticsearch
 from elasticsearch import exceptions as elasticsearch_exceptions
 from elasticsearch.helpers import scan, bulk
+from dotenv import load_dotenv
 
 import logging
 
@@ -85,7 +86,7 @@ class BulkUpserter:
 
 
 class LocallogicContentRewriter:
-  def __init__(self, es_host, es_port=9200, llm_model=LLM, simple_append=True, 
+  def __init__(self, es_host, es_port=9200, llm_model=LLM, simple_append=True,
                archiver_filepath: str = '.', archiver_host: str = 'localhost', archiver_port: int = 6379):
     '''
     es_host: Elasticsearch host
@@ -93,8 +94,27 @@ class LocallogicContentRewriter:
     llm_model: GPT model to use
     simple_append: if True, Use simple append of stat to housing (at city level), otherwise use GPT to rewrite content.
     '''
-    self.es_host = es_host    
-    self.es_client = Elasticsearch([f'http://{es_host}:{es_port}/'])
+    self.es_host = es_host
+
+    # Load API key from ~/.rlp_es_env (local) or ~/.env (prod VM), whichever exists first.
+    for env_file in [Path.home() / '.rlp_es_env', Path.home() / '.env']:
+      if env_file.exists():
+        load_dotenv(env_file)
+        break
+
+    api_key = os.environ.get('RLP_LISTING_ES_API_KEY')
+
+    if api_key:
+      self.es_client = Elasticsearch(
+        [f'https://{es_host}:{es_port}'],
+        headers={'Authorization': 'ApiKey ' + api_key},
+        verify_certs=True,
+        send_get_body_as='POST',
+      )
+    else:
+      # fallback for local dev without auth (e.g. localhost)
+      self.es_client = Elasticsearch([f'http://{es_host}:{es_port}/'])
+
     if not self.es_client.ping():
       raise Exception(f'Cannot connect to Elasticsearch at {es_host}:{es_port}')
     
