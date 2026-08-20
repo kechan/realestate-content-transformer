@@ -164,7 +164,11 @@ def setup_logging(log_filename, log_level):
   logging.basicConfig(
         filename=log_filename,
         level=log_level,
-        format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s'  # Log format
+        format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s',  # Log format
+        force=True,  # required for --geog_ids_file: load_geog_ids_from_file() calls logging.info()
+                     # before this runs, which implicitly (and silently) configures the root logger
+                     # with defaults (console only, no file) -- without force=True, this basicConfig
+                     # call becomes a no-op and no log file is ever created.
   )
   
   # Note: The TimedRotatingFileHandler is commented out as it may not be needed
@@ -366,7 +370,10 @@ if __name__ == '__main__':
     logging.basicConfig(
         filename=log_filename,
         level=log_level,
-        format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s'  # Log format
+        format='%(asctime)s [%(levelname)s] [Logger: %(name)s]: %(message)s',  # Log format
+        force=True,  # same reasoning as setup_logging() -- load_geog_ids_from_file() (called
+                     # unconditionally above, before `rerun` is even checked) may have already
+                     # implicitly configured the root logger if geog_ids_file was also set.
     )
 
     rerun_to_recover(
