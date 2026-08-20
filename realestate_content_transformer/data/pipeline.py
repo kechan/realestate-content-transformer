@@ -44,6 +44,13 @@ PROVINCE_FULL_NAME = {
   "YT": "Yukon",
 }
 
+# Minimum active listing count required, per property type, before its median list price (or,
+# for ALL, the overall active-listing-count itself) is trusted enough to publish. A median
+# computed from a handful of listings (e.g. n=1) isn't a meaningful statistic and is prone to
+# outliers -- see get_market_trend_metrics(). Mirrors the common real-estate-board convention
+# of suppressing granular stats below a minimum sample size.
+MIN_LISTING_COUNT_FOR_MEDIAN = 5
+
 class BulkUpserter:
   # Handles bulk updates to an Elasticsearch index, with error logging and optional ID mapping.
   def __init__(self, es_client: Elasticsearch, index_name: str, longId_to_geog_id_dict: Dict[str, str] = None):
@@ -1157,6 +1164,15 @@ class LocallogicContentRewriter:
     'median_price_semi_detached', 'median_price_townhouse', 'median_price_condo'.
     Median prices are rounded to the nearest integer here -- the single data-presentation
     point for all consumers -- so the LLM is never asked to perform this rounding itself.
+
+    Each property type's median price (and, for ALL, the active_listing_count itself) is only
+    included if that property type's own listing count is >= MIN_LISTING_COUNT_FOR_MEDIAN --
+    a median backed by a handful of listings (e.g. n=1) isn't a meaningful statistic and is
+    prone to outliers (observed in practice: a semi-detached "median" of $55,000 backed by a
+    single stale listing). The count used for this check is always that property type's own
+    mth_end_snapshot_listing_count entry, never the ALL doc's count or any other property
+    type's -- same "never cross-reference independently-updated arrays" principle as the
+    month-pairing logic below.
     '''
 
     PROPERTY_TYPE_TO_KEY = {
@@ -1203,20 +1219,25 @@ class LocallogicContentRewriter:
 
       doc_metrics = doc.get('_source', {}).get('metrics', {})
 
-      # median list price, this property type
+      # this property type's own listing count -- gates whether its median is trustworthy
+      # enough to publish. Always this property type's own count, never the ALL doc's.
+      count_month, count = _last_entry(doc_metrics.get('mth_end_snapshot_listing_count', []))
+      has_enough_listings = (
+        count_month is not None and _valid_number(count) and count >= MIN_LISTING_COUNT_FOR_MEDIAN
+      )
+
+      # median list price, this property type -- only published if backed by enough listings
       month, price = _last_entry(doc_metrics.get('last_mth_median_asking_price', []))
-      if month is not None and _valid_number(price):
+      if has_enough_listings and month is not None and _valid_number(price):
         metrics[key] = int(round(float(price)))
         if property_type == 'ALL':
           # canonical as-of month for the whole rewrite -- always paired with the overall
           # median price it was read alongside, never computed independently from "today".
           metrics['month_year'] = _format_month_year(month)
 
-      # active listing count (only carried on the ALL doc)
-      if property_type == 'ALL':
-        count_month, count = _last_entry(doc_metrics.get('mth_end_snapshot_listing_count', []))
-        if count_month is not None and _valid_number(count):
-          metrics['active_listing_count'] = int(count)
+      # active listing count (only carried on the ALL doc) -- same threshold applies
+      if property_type == 'ALL' and has_enough_listings:
+        metrics['active_listing_count'] = int(count)
 
     return metrics
 
