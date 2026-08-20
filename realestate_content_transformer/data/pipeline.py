@@ -607,7 +607,15 @@ class LocallogicContentRewriter:
         avg_price_explanation = self.get_avg_price_explanation()
         params_dict = {'[avg_price]': avg_price_explanation}
 
-      rewrites = gpt_writer.rewrite(params_dict=params_dict, use_rag=use_rag, 
+      # When there isn't enough mkt_trends data to satisfy the mandatory opening sentence
+      # (params_dict is None, use_rag branch only), fall back to a plain content rewrite --
+      # no numeric opening sentence demanded, so GPT has nothing it's forced to fabricate.
+      # Previously params_dict was nulled out but the guideline still demanded the sentence,
+      # which led GPT to invent plausible-looking numbers (observed on a real PROD run).
+      # The placeholder (use_rag=False) path is unaffected -- always keep its original guideline.
+      gpt_writer.include_start_with_guideline = (params_dict is not None) if use_rag else True
+
+      rewrites = gpt_writer.rewrite(params_dict=params_dict, use_rag=use_rag,
                                     housing=housing   # transport=transport, services=services, character=character
                                     )
       if self.archiver:
