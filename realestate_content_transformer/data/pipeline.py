@@ -1,6 +1,6 @@
 from typing import Union, Tuple, Dict, List
 
-import os, time, sys, gc, random, copy, traceback
+import os, time, sys, gc, random, copy, traceback, math
 from collections import OrderedDict
 import numpy as np
 import pandas as pd
@@ -27,6 +27,22 @@ from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 # LIGHT_WEIGHT_LLM = 'gpt-3.5-turbo-0613'
 LIGHT_WEIGHT_LLM = 'gpt-4o'
 LLM = 'gpt-4o'   # 'gpt-4-1106-preview'
+
+PROVINCE_FULL_NAME = {
+  "AB": "Alberta",
+  "BC": "British Columbia",
+  "MB": "Manitoba",
+  "NB": "New Brunswick",
+  "NL": "Newfoundland and Labrador",
+  "NT": "Northwest Territories",
+  "NS": "Nova Scotia",
+  "NU": "Nunavut",
+  "ON": "Ontario",
+  "PE": "Prince Edward Island",
+  "QC": "Quebec",
+  "SK": "Saskatchewan",
+  "YT": "Yukon",
+}
 
 class BulkUpserter:
   # Handles bulk updates to an Elasticsearch index, with error logging and optional ID mapping.
@@ -104,7 +120,12 @@ class LocallogicContentRewriter:
 
     api_key = os.environ.get('RLP_LISTING_ES_API_KEY')
 
-    if api_key:
+    # a genuinely local, no-auth ES instance is host=localhost/127.0.0.1 AND port 9200 --
+    # localhost on other ports (e.g. 9201/9202) is an SSH-tunneled remote cluster, which
+    # still needs the ApiKey/HTTPS path even though the hostname alone looks "local".
+    is_local_no_auth_target = es_host in ('localhost', '127.0.0.1') and es_port == 9200
+
+    if api_key and not is_local_no_auth_target:
       self.es_client = Elasticsearch(
         [f'https://{es_host}:{es_port}'],
         headers={'Authorization': 'ApiKey ' + api_key},
@@ -112,7 +133,7 @@ class LocallogicContentRewriter:
         send_get_body_as='POST',
       )
     else:
-      # fallback for local dev without auth (e.g. localhost)
+      # fallback for local dev without auth (e.g. localhost:9200)
       self.es_client = Elasticsearch([f'http://{es_host}:{es_port}/'])
 
     if not self.es_client.ping():
@@ -128,6 +149,7 @@ class LocallogicContentRewriter:
     self.geo_details_fr_index_name = 'rlp_geo_details_fr'
     self.geo_overrides_index_name = 'rlp_content_geo_overrides_current'
     self.listing_index_name = 'rlp_listing_current'
+    self.mkt_trends_index_name = 'rlp_mkt_trends_current'
 
     # all possible provinces
     self.prov_codes = ["AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU", "ON", "PE", "QC", "SK", "YT"]
@@ -528,17 +550,51 @@ class LocallogicContentRewriter:
         return False
 
       if use_rag:
-        # additional metrics to inject into prompt (using RAG)          
-        avg_price, _, _ = self.get_avg_price_and_active_pct(geog_id=geog_id, prov_code=prov_code, city=city)
-        if avg_price > 1.0:
+        # market trend metrics to inject into prompt (using RAG); replaces the old single
+        # avg-price stat for city-level content -- get_avg_price_and_active_pct() is left
+        # untouched and still used by rewrite_property_type() (subpages) and the
+        # simple_append branch above.
+        trend_metrics = self.get_market_trend_metrics(geog_id=geog_id)
+
+        if 'month_year' in trend_metrics and 'active_listing_count' in trend_metrics and 'median_price_all' in trend_metrics:
+          province_full = PROVINCE_FULL_NAME.get(prov_code, prov_code)
+
+          # Pre-format as "$X,XXX" strings here -- the data-presentation point -- rather than
+          # relying on the LLM to remember to add the currency symbol when rendering the number.
+          def _fmt_price(value):
+            return f"${value:,}"
+
           if lang == 'en':
-            params_dict = {'Average price on MLS®': avg_price}
+            params_dict = {'As-of month': trend_metrics['month_year']}
+            params_dict['Number of residential properties for sale (all types)'] = trend_metrics['active_listing_count']
+            params_dict['Median MLS® list price, all property types'] = _fmt_price(trend_metrics['median_price_all'])
+            if 'median_price_detached' in trend_metrics:
+              params_dict['Median MLS® list price, single-family detached'] = _fmt_price(trend_metrics['median_price_detached'])
+            if 'median_price_semi_detached' in trend_metrics:
+              params_dict['Median MLS® list price, semi-detached'] = _fmt_price(trend_metrics['median_price_semi_detached'])
+            if 'median_price_townhouse' in trend_metrics:
+              params_dict['Median MLS® list price, townhouse'] = _fmt_price(trend_metrics['median_price_townhouse'])
+            if 'median_price_condo' in trend_metrics:
+              params_dict['Median MLS® list price, condominium'] = _fmt_price(trend_metrics['median_price_condo'])
+            params_dict['Province (full name)'] = province_full
           elif lang == 'fr':
-            params_dict = {'Prix moyen sur MLS®': avg_price}
+            params_dict = {'Mois de référence': trend_metrics['month_year']}
+            params_dict['Nombre de propriétés résidentielles à vendre (tous types)'] = trend_metrics['active_listing_count']
+            params_dict['Prix médian sur MLS®, tous types de propriétés'] = _fmt_price(trend_metrics['median_price_all'])
+            if 'median_price_detached' in trend_metrics:
+              params_dict['Prix médian sur MLS®, maison unifamiliale détachée'] = _fmt_price(trend_metrics['median_price_detached'])
+            if 'median_price_semi_detached' in trend_metrics:
+              params_dict['Prix médian sur MLS®, maison jumelée'] = _fmt_price(trend_metrics['median_price_semi_detached'])
+            if 'median_price_townhouse' in trend_metrics:
+              params_dict['Prix médian sur MLS®, maison en rangée'] = _fmt_price(trend_metrics['median_price_townhouse'])
+            if 'median_price_condo' in trend_metrics:
+              params_dict['Prix médian sur MLS®, copropriété'] = _fmt_price(trend_metrics['median_price_condo'])
+            params_dict['Province (nom complet)'] = province_full
           else:
             raise ValueError(f'Unsupported language: {lang}')
         else:
-          params_dict = None  # we dont want avg price of 0.0
+          # not enough data to satisfy the mandatory opening sentence (month, count, overall median) -- skip RAG injection entirely
+          params_dict = None
 
       else: # use placeholder, instruct to use placeholders while adding new information
         avg_price_explanation = self.get_avg_price_explanation()
@@ -1072,6 +1128,97 @@ class LocallogicContentRewriter:
         pc_active = round(count_listings / total_listings * 100.0 if count_listings > 0 else 0.0, 2)
 
     return round(avg_price, 0) if avg_price is not None else 0.0, pc_active, count_listings
+
+  def get_market_trend_metrics(self, geog_id: str) -> dict:
+    '''
+    Fetch last-completed-month market trend metrics (active listing count and median list
+    price, overall and by property type) from the mkt_trends index for a given geog_id.
+    Used for city-level GPT rewrites only -- see rewrite_city(). Unlike
+    get_avg_price_and_active_pct(), this reads pre-computed nested fields off mkt_trends
+    docs by ID rather than running live aggregation queries.
+
+    Each returned price/count is paired with the month label actually attached to it in its
+    own nested time-series array -- never assumed to be "this calendar month". A property
+    type with no ES doc (NotFoundError -- a genuinely benign "no data for this city"),
+    an empty metrics array, or an invalid value (None, NaN, non-numeric, <= 0) is simply
+    omitted from the returned dict; these cases are indistinguishable to the caller, so no
+    placeholder/null value is ever passed through to the LLM prompt.
+
+    Any other ES error (e.g. connection failure -- ES actually unreachable, not just "no
+    doc for this city") is deliberately NOT caught here and propagates to the caller, same
+    as get_avg_price_and_active_pct(). This is intentional: rewrite_city() must fail before
+    ever calling the LLM if the data source is genuinely down, rather than silently
+    proceeding with an empty params_dict -- the prompt's opening-sentence guideline requires
+    real date/metric values, and calling GPT without them risks a low-quality or fabricated
+    rewrite that could end up published on the live site.
+
+    Returns a dict with a subset of these keys: 'month_year' (e.g. "June 2026"),
+    'active_listing_count', 'median_price_all', 'median_price_detached',
+    'median_price_semi_detached', 'median_price_townhouse', 'median_price_condo'.
+    Median prices are rounded to the nearest integer here -- the single data-presentation
+    point for all consumers -- so the LLM is never asked to perform this rounding itself.
+    '''
+
+    PROPERTY_TYPE_TO_KEY = {
+      'ALL': 'median_price_all',
+      'DETACHED': 'median_price_detached',
+      'SEMI-DETACHED': 'median_price_semi_detached',
+      'TOWNHOUSE': 'median_price_townhouse',
+      'CONDO': 'median_price_condo',
+    }
+
+    def _valid_number(value):
+      if value is None:
+        return False
+      try:
+        value = float(value)
+      except (TypeError, ValueError):
+        return False
+      return not math.isnan(value) and value > 0
+
+    def _last_entry(nested_array):
+      # nested_array: list of {"month": "YYYY-MM", "value": <number>}
+      if not nested_array:
+        return None, None
+      last = nested_array[-1]
+      return last.get('month'), last.get('value')
+
+    def _format_month_year(month_str):
+      return datetime.strptime(month_str, '%Y-%m').strftime('%B %Y')   # e.g. "2026-06" -> "June 2026"
+
+    metrics = {}
+
+    for property_type, key in PROPERTY_TYPE_TO_KEY.items():
+      doc_id = f'{geog_id}_{property_type}'
+      try:
+        doc = self.es_client.get(
+          index=self.mkt_trends_index_name,
+          id=doc_id,
+          _source=['metrics.mth_end_snapshot_listing_count', 'metrics.last_mth_median_asking_price']
+        )
+      except elasticsearch_exceptions.NotFoundError:
+        continue
+      # any other exception (e.g. connection failure) is intentionally left uncaught --
+      # see docstring. rewrite_city() must fail before calling the LLM if ES is genuinely down.
+
+      doc_metrics = doc.get('_source', {}).get('metrics', {})
+
+      # median list price, this property type
+      month, price = _last_entry(doc_metrics.get('last_mth_median_asking_price', []))
+      if month is not None and _valid_number(price):
+        metrics[key] = int(round(float(price)))
+        if property_type == 'ALL':
+          # canonical as-of month for the whole rewrite -- always paired with the overall
+          # median price it was read alongside, never computed independently from "today".
+          metrics['month_year'] = _format_month_year(month)
+
+      # active listing count (only carried on the ALL doc)
+      if property_type == 'ALL':
+        count_month, count = _last_entry(doc_metrics.get('mth_end_snapshot_listing_count', []))
+        if count_month is not None and _valid_number(count):
+          metrics['active_listing_count'] = int(count)
+
+    return metrics
 
   def get_avg_lease_price(self, geog_id, prov_code, city) -> Tuple[float, int]:
     '''

@@ -45,9 +45,9 @@ Real Estate Content Transformer is a Python package that uses GPT models to rewr
 
 ### External Dependencies
 
-The package depends on two sibling packages:
-- `realestate_core`: Provides common utilities and class extensions
-- `realestate_spam`: Contains `LocalLogicGPTRewriter` for GPT-based content generation
+The package depends on two sibling packages, both local editable installs (not from PyPI), living alongside this repo under `Developer/`:
+- `realestate_core`: Provides common utilities and class extensions (e.g. the `.q()`/`.defrag_index()` DataFrame monkey-patches)
+- `realestate_spam`: Contains `LocalLogicGPTRewriter` (`realestate_spam/llm/chatgpt.py`) for GPT-based content generation — see that repo's CLAUDE.md for the class's prompt-construction details (`_construct_sys_prompt`, `construct_openai_user_prompt`, `print_prompt` for debugging exact prompts). `LocalLogicGPTRewriter` in turn depends on the `raa` package (`RAA` completion wrapper), documented in `realestate_spam`'s CLAUDE.md.
 
 ## Running the Application
 
@@ -227,3 +227,30 @@ pip install -e .
 ```
 
 The package is named `realestate_content_transformer` version 1.0.1.
+
+## Rollback Reference — Pre-v1 (city-level median metrics) Commits
+
+The "v1" feature (dated median-price metrics replacing avg-price on city-level pages,
+see `docs/city_page_metrics_enhancement_spec_v1.md`) touches both this repo and
+`realestate_spam`. If v1 ever needs a "nuclear" rollback (redeploy old code + rerun),
+these are the last commits on `origin/main` in each repo **before** v1 landed:
+
+| Repo | Pre-v1 commit (`origin/main`) | Commit message |
+|---|---|---|
+| `realestate_content_transformer` | `628cf8996cf3a26c6fd4d678e81efab6bc883961` | feat: support ES8 authenticated cluster via API key |
+| `realestate_spam` | `6079342830d3c50185ce575cb0c1bbeef60027b2` | subpage prompt change to put stats in the 1st sentence |
+
+To roll back PROD's deployed code to pre-v1: check out (or `git reset --hard`, on the
+deployment checkout only, not this dev repo) each repo to its commit above.
+
+Note this only reverts *code* — it does not undo any city-level ES content already
+published to PROD by a v1 run. For that, see `scripts/rollback_city_level_v1_median_metrics.py`,
+which restores previously-archived (pre-v1) city-level content from
+`ChatGPTRewriteArchiver`'s history file without needing a code rollback at all — this is
+the preferred rollback path; the git-commit rollback above is the fallback of last resort.
+
+**PROD pre-v1 archive version**: confirmed from PROD's `archive_rewrites.txt` (record
+`rewrite:yt_watson-lake:RENTAL:202512:en`), the last run before v1 used version string
+`202512`. Pass this as `--restore_version 202512` to the rollback script above (the
+`--v1_version` value is whatever version string the actual v1 run on PROD used —
+confirm from a v1-era record in the same archive file before running the rollback).

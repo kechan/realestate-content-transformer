@@ -1,0 +1,144 @@
+City Page Metrics Enhancement — Draft Prompt (v1)
+Status: CONFIRMED design, tested against exact final wording. Implementation not yet started.
+Companion doc: city_page_metrics_enhancement_spec_v1.md
+
+================================================================================
+SYSTEM PROMPT (unchanged from today)
+================================================================================
+
+You are locallogic writer with lot of experience working with neighborhood profiles.
+Please rewrite the below with interesting variations keeping the tone and style similar.
+There is 1 section and It is delimited by <housing></housing>.
+
+================================================================================
+USER PROMPT (v1, final design)
+================================================================================
+
+For housing section only if present, please incorporate these data points:
+
+  1) As-of month: {{month_year}}
+  2) Number of residential properties for sale (all types): {{active_listing_count}}
+  3) Median MLS® list price, all property types: {{median_price_all}}
+  4) Median MLS® list price, single-family detached: {{median_price_detached}}
+  5) Median MLS® list price, semi-detached: {{median_price_semi_detached}}
+  6) Median MLS® list price, townhouse: {{median_price_townhouse}}
+  7) Median MLS® list price, condominium: {{median_price_condo}}
+  8) Province (full name): {{province_full}}
+
+<housing>{{original_locallogic_housing_text}}</housing>
+
+IMPORTANT
+
+0. Wrap each section in its own tag, e.g. <housing></housing>
+1. Ensure the rewrite is in the same language as the original content.
+2. For housing if present, the first sentence must state: 'As of {as-of month}, there are {active listing count} homes for sale in {city}, {province}, with a median MLS® list price of {overall median list price}.' Use data points 1, 2, 3, and 8 above for the bracketed values; infer the city name from the original content as before.
+3. Immediately follow with a second sentence starting 'By property type, the median was' that reports the median list price for each property type provided in data points 4-7, in the order detached, semi-detached, townhouse, condominium. If a data point is genuinely missing, omit that property type rather than inventing a value.
+4. Do not use the word "average" anywhere — all figures are medians.
+5. After the two opening sentences, continue rewriting the remaining original content (ownership rate, housing type mix, bedroom counts, construction era, etc.) in the same tone as before.
+6. Keep the length in the same general ballpark as the original, but do NOT drop or shorten any of data points 1-7, guideline 3's property-type breakdown, or guideline 5's remaining original content in order to hit a tighter word count. Completeness of the required data takes priority over word-count parity.
+7. Verbiage may not be too "flowery"
+8. Be sure to retain numerical and highway or major street info.
+
+NOTE on guideline 2: unlike the earlier draft, this is now STATIC instruction text (no
+per-call Python f-string needed for the guideline itself) — mirrors how the *existing*
+live prompt's city-name handling already works: the model infers the city name from the
+<housing> content it's given, rather than code injecting it into the guideline sentence.
+The only literal Python-templated values live in the numbered data points list above,
+which construct_openai_user_prompt() already builds generically from params_dict — no
+new function parameters (e.g. a "city" arg) are needed in chatgpt.py.
+
+NOTE on data point 8: {{province_full}} is the full province name (e.g. "Ontario"), not
+prov_code ("ON"). Added because, unlike city name, province is never mentioned anywhere
+in the original LocalLogic housing text — GPT has nothing to infer it from, so it must
+be supplied explicitly. The pipeline currently only carries prov_code — a code-to-full-
+name mapping needs to be added in realestate_content_transformer/data/pipeline.py before
+this can be filled in. This is a new, small implementation requirement, not previously
+scoped.
+
+================================================================================
+WORKED EXAMPLE — Barrie, ON (real PROD data, verified 2026-07-20)
+================================================================================
+
+geog_id: g30_dpzk6g9n | longId: on_barrie
+
+For housing section only if present, please incorporate these data points:
+
+  1) As-of month: June 2026
+  2) Number of residential properties for sale (all types): 588
+  3) Median MLS® list price, all property types: $725,000
+  4) Median MLS® list price, single-family detached: $799,900
+  5) Median MLS® list price, semi-detached: $617,499.50
+  6) Median MLS® list price, townhouse: $589,450
+  7) Median MLS® list price, condominium: $450,000
+  8) Province (full name): Ontario
+
+<housing>In Barrie, many buildings are single detached homes, while small apartment buildings and townhouses are also present in the housing stock. This city offers mainly four or more bedroom and three bedroom homes. Around 70% of the population of this city own their home and 30% are renters. Roughly 30% of properties in this city were constructed after the year 2000, while most of the remaining buildings were constructed pre-1960 and in the 1960s.</housing>
+
+IMPORTANT
+
+0. Wrap each section in its own tag, e.g. <housing></housing>
+1. Ensure the rewrite is in the same language as the original content.
+2. For housing if present, the first sentence must state: 'As of {as-of month}, there are {active listing count} homes for sale in {city}, {province}, with a median MLS® list price of {overall median list price}.' Use data points 1, 2, 3, and 8 above for the bracketed values; infer the city name from the original content as before.
+3. Immediately follow with a second sentence starting 'By property type, the median was' that reports the median list price for each property type provided in data points 4-7, in the order detached, semi-detached, townhouse, condominium. If a data point is genuinely missing, omit that property type rather than inventing a value.
+4. Do not use the word "average" anywhere — all figures are medians.
+5. After the two opening sentences, continue rewriting the remaining original content (ownership rate, housing type mix, bedroom counts, construction era, etc.) in the same tone as before.
+6. Keep the length in the same general ballpark as the original, but do NOT drop or shorten any of data points 1-7, guideline 3's property-type breakdown, or guideline 5's remaining original content in order to hit a tighter word count. Completeness of the required data takes priority over word-count parity.
+7. Verbiage may not be too "flowery"
+8. Be sure to retain numerical and highway or major street info.
+
+================================================================================
+TESTED OUTPUT — gpt-5.6-luna, Barrie, verified against FINAL confirmed opening wording
+================================================================================
+
+As of June 2026, there are 588 homes for sale in Barrie, Ontario, with a median MLS®
+list price of $725,000. By property type, the median was $799,900 for single-family
+detached homes, $617,499.50 for semi-detached homes, $589,450 for townhouses, and
+$450,000 for condominiums. Barrie's housing stock consists mainly of single detached
+homes, along with small apartment buildings and townhouses. The city offers primarily
+three-bedroom and four-or-more-bedroom homes. Approximately 70% of residents own their
+home, while 30% are renters. Roughly 30% of properties were built after 2000, while
+most of the remaining buildings date from before 1960 or the 1960s.
+
+Verified: opening sentence matches confirmed wording exactly; city correctly inferred
+("Barrie"); province correctly pulled from data point 8 ("Ontario"); property-type
+breakdown correct order/values; no use of "average"; all original content retained;
+length in same ballpark as original, nothing dropped for brevity. This is the first
+test run against the actual SEO-confirmed opening (earlier test runs used a
+now-superseded hybrid opening) — result is clean, prompt design considered validated.
+
+================================================================================
+DECISION LOG
+================================================================================
+
+Opening sentence: RESOLVED. SEO engineer feedback (email, image attachment) confirmed
+the opening must be "As of {{month_year}}, there are {{active_listing_count}} homes
+for sale in {{city}}, {{province_full}}, with a median MLS® list price of
+{{median_price_all}}." This supersedes the two earlier candidates: (a) "Homes for sale
+in {{city}}..." (today's live behavior) and the hybrid hand-drafted version that led
+with "Homes for sale in {{city}}" but folded in the date mid-sentence.
+
+Scope clarified by user (2026-08, in response to the SEO feedback): the SEO engineer's
+mockup also showed an asking-price range ({{price_low}}/{{price_high}}), an "average"
+(not median) framing, a Royal LePage House Price Survey aggregate/quarterly/YoY block,
+a computed price gap ({{type_gap}}), and a narrower detached+condo-only breakdown.
+User confirmed NONE of that was actual feedback — the email was solely about the
+opening sentence wording. All of those extra fields are explicitly OUT of this
+prompt. Property-type breakdown remains all 4 types (detached, semi-detached,
+townhouse, condo) per the earlier-confirmed scope. All figures remain median, never
+average.
+
+Guideline 2 implementation mechanism: RESOLVED (2026-08, user pushback). Initially
+drafted as a per-call Python f-string baking literal city/date/count/price values into
+the guideline sentence itself. User correctly pointed out this is inconsistent with how
+the existing live prompt already works — the model already reliably infers the city name
+from the <housing> content, no code injection needed. Guideline 2 is now static
+instruction text that references the numbered data points generically (like guideline 3
+already does), matching the established, already-proven pattern. Reduces implementation
+surface: no new "city" parameter needed in construct_openai_user_prompt(); only a new
+"Province (full name)" entry needs to be added to params_dict in pipeline.py, since
+province (unlike city) is never mentioned in the original LocalLogic text and can't be
+inferred.
+
+Prompt design: CONFIRMED via testing (see TESTED OUTPUT above). Ready for
+implementation into pipeline.py / chatgpt.py per the constraints in
+city_page_metrics_enhancement_spec_v1.md §6.
