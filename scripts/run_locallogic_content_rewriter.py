@@ -49,12 +49,14 @@ def test_openai_health():
   return status
 
 
-def main_single_location(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, property_type_filter=None, force_rewrite=False):
+def main_single_location(es_host, es_port, prov_code=None, geog_id=None, lang='en', archiver_file=None, property_type_filter=None, force_rewrite=False, skip_health_check=False):
   """Process a single province or single geog_id (existing logic)."""
   # check openai health
   # will immediately exit if not healthy and log the error
   # NOTE: within rewrite_property_types, a consecutive failure count is used to halt if there are too many consecutive failures (due mostly to openai api)
-  if not test_openai_health():
+  # skip_health_check: set by batch mode, which already checked health once before the loop --
+  # avoids re-checking (and burning an OpenAI call) for every single geog_id in the batch.
+  if not skip_health_check and not test_openai_health():
     logging.error("OpenAI API is not healthy. Exiting...")
     return 0
 
@@ -95,6 +97,12 @@ def main(es_host, es_port, prov_code=None, geog_id=None, geog_ids_list=None,
   # Case 1: Multiple geog_ids from list
   if geog_ids_list is not None and len(geog_ids_list) > 0:
     logging.info(f"Batch processing {len(geog_ids_list)} geog_ids")
+
+    # check openai health once for the whole batch, instead of once per geog_id
+    if not test_openai_health():
+      logging.error("OpenAI API is not healthy. Exiting...")
+      return 0
+
     total_rewrites = 0
 
     for idx, current_geog_id in enumerate(geog_ids_list, 1):
@@ -108,7 +116,8 @@ def main(es_host, es_port, prov_code=None, geog_id=None, geog_ids_list=None,
           lang=lang,
           archiver_file=archiver_file,
           property_type_filter=property_type_filter,
-          force_rewrite=force_rewrite
+          force_rewrite=force_rewrite,
+          skip_health_check=True
         )
         total_rewrites += rewrites
         logging.info(f"Completed {current_geog_id}: {rewrites} rewrites")
@@ -277,6 +286,11 @@ if __name__ == '__main__':
     # Check for the highest run_number for the given prov_code and lang
     if geog_id is not None:
       filtered_df = run_entry_df[(run_entry_df['prov_code'] == geog_id) & (run_entry_df['lang'] == lang)]
+    elif geog_ids_list is not None:
+      # location_identifier here is "batch_{N}_geogs" -- matches what gets written to the
+      # 'prov_code' column for batch runs below (see new_entry), so repeated batch runs of
+      # the same file size correctly increment run_number instead of always resolving to 1.
+      filtered_df = run_entry_df[(run_entry_df['prov_code'] == location_identifier) & (run_entry_df['lang'] == lang)]
     else:
       filtered_df = run_entry_df[(run_entry_df['prov_code'] == prov_code) & (run_entry_df['lang'] == lang)]
 
