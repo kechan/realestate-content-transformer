@@ -44,17 +44,11 @@ PROVINCE_FULL_NAME = {
   "YT": "Yukon",
 }
 
-# Minimum listing-activity count required, per property type, before its median list price (or,
-# for ALL, the overall active-listing-count itself) is trusted enough to publish. A median
-# computed from a handful of listings (e.g. n=1) isn't a meaningful statistic and is prone to
-# outliers -- see get_market_trend_metrics(). Mirrors the common real-estate-board convention
-# of suppressing granular stats below a minimum sample size; also matches this codebase's own
-# existing precedent (get_avg_price_and_active_pct()'s MIN_LISTING_THRESHOLD = 10, used for
-# the same "statistical robustness" reasoning on a different metric). Set to 11 (odd, one above
-# that precedent) rather than 5 because get_market_trend_metrics() currently gates on
-# last_mth_new_listings (a temporary workaround, see that method's docstring) rather than the
-# true active-listing count -- new_listings and active stock are different populations, so a
-# higher bar here reduces (but does not eliminate) false positives from that mismatch.
+# Minimum month-end active-listing count, per property type, required before publishing
+# its median list price (and, for ALL, the overall active-listing count).
+# This inventory gate is not the sample size of the accumulated listings used to compute
+# the median in LastMthMetricsProcessor. Retain the existing threshold of 11 when reverting
+# the temporary new-listings-count workaround; it does not constrain sample-size parity.
 MIN_LISTING_COUNT_FOR_MEDIAN = 11
 
 class BulkUpserter:
@@ -1158,8 +1152,9 @@ class LocallogicContentRewriter:
     get_avg_price_and_active_pct(), this reads pre-computed nested fields off mkt_trends
     docs by ID rather than running live aggregation queries.
 
-    Each returned price/count is paired with the month label actually attached to it in its
-    own nested time-series array -- never assumed to be "this calendar month". A property
+    The returned month_year comes from the ALL median price's own time-series entry,
+    never assumed to be "this calendar month". Count and price entries are selected
+    independently; this method does not enforce month alignment or freshness. A property
     type with no ES doc (NotFoundError -- a genuinely benign "no data for this city"),
     an empty metrics array, or an invalid value (None, NaN, non-numeric, <= 0) is simply
     omitted from the returned dict; these cases are indistinguishable to the caller, so no
@@ -1180,25 +1175,14 @@ class LocallogicContentRewriter:
     point for all consumers -- so the LLM is never asked to perform this rounding itself.
 
     Each property type's median price (and, for ALL, the active_listing_count itself) is only
-    included if that property type appears to have enough listings to make its median
-    trustworthy -- a median backed by a handful of listings (e.g. n=1) isn't a meaningful
-    statistic and is prone to outliers (observed in practice: a semi-detached "median" of
-    $55,000 backed by a single stale listing).
+    included when its own metrics.mth_end_snapshot_listing_count meets the minimum.
+    Never use the ALL doc's count to qualify another property type. For ALL, the displayed
+    count is the same entry used for the gate. This is an inventory-activity gate, not a
+    measurement of the actual sample size used to calculate the median.
 
-    TEMPORARY WORKAROUND (as of 2026-08-24): the threshold check itself reads
-    metrics.last_mth_new_listings instead of metrics.mth_end_snapshot_listing_count.
-    mth_end_snapshot_listing_count was found to be unreliable for some geog_id/propertyType
-    combos -- e.g. Halifax CONDO showed a snapshot count of 4 in the same month it had 74 new
-    listings and a ~40-day median days-on-market, which is not plausible (most of those 74
-    should still have been active at month-end). last_mth_new_listings does not show this
-    anomaly and is used here purely as a more reliable proxy for "is there enough listing
-    activity to trust this median" -- it is NOT used as a replacement for the displayed
-    active_listing_count itself, which still comes from mth_end_snapshot_listing_count as
-    before (unaffected by this workaround). Revert this once the analytics team fixes
-    mth_end_snapshot_listing_count at the source -- see realestate-analytics/TODO.md.
-    The count used for this check is always that property type's own last_mth_new_listings
-    entry, never the ALL doc's or any other property type's -- same "never cross-reference
-    independently-updated arrays" principle as the month-pairing logic below.
+    The temporary last_mth_new_listings proxy addressed undercounted inventory from the
+    former cache-based snapshot extraction. AbsorptionRateProcessor now queries active
+    listings directly, so use the month-end inventory field again.
     '''
 
     PROPERTY_TYPE_TO_KEY = {
@@ -1239,7 +1223,6 @@ class LocallogicContentRewriter:
           _source=[
             'metrics.mth_end_snapshot_listing_count',
             'metrics.last_mth_median_asking_price',
-            'metrics.last_mth_new_listings',
           ]
         )
       except elasticsearch_exceptions.NotFoundError:
@@ -1249,16 +1232,15 @@ class LocallogicContentRewriter:
 
       doc_metrics = doc.get('_source', {}).get('metrics', {})
 
-      # TEMPORARY WORKAROUND (see docstring): gate on last_mth_new_listings, not
-      # mth_end_snapshot_listing_count -- the latter is what's actually displayed
-      # (active_listing_count below) and stays untouched by this workaround.
-      new_listings_month, new_listings_count = _last_entry(doc_metrics.get('last_mth_new_listings', []))
+      # gate on this property type's own mth_end_snapshot_listing_count -- the same field
+      # the displayed active_listing_count comes from (see below).
+      count_month, count = _last_entry(doc_metrics.get('mth_end_snapshot_listing_count', []))
       has_enough_listings = (
-        new_listings_month is not None and _valid_number(new_listings_count)
-        and new_listings_count >= MIN_LISTING_COUNT_FOR_MEDIAN
+        count_month is not None and _valid_number(count)
+        and count >= MIN_LISTING_COUNT_FOR_MEDIAN
       )
 
-      # median list price, this property type -- only published if backed by enough listings
+      # median list price, this property type -- only published if its inventory gate passes
       month, price = _last_entry(doc_metrics.get('last_mth_median_asking_price', []))
       if has_enough_listings and month is not None and _valid_number(price):
         metrics[key] = int(round(float(price)))
@@ -1267,13 +1249,10 @@ class LocallogicContentRewriter:
           # median price it was read alongside, never computed independently from "today".
           metrics['month_year'] = _format_month_year(month)
 
-      # active listing count (only carried on the ALL doc) -- same threshold applies, but the
-      # displayed value itself still comes from mth_end_snapshot_listing_count, unaffected by
-      # the workaround above.
+      # active listing count (only carried on the ALL doc) -- same threshold applies, and the
+      # displayed value is the same mth_end_snapshot_listing_count entry used for the gate above.
       if property_type == 'ALL' and has_enough_listings:
-        count_month, count = _last_entry(doc_metrics.get('mth_end_snapshot_listing_count', []))
-        if count_month is not None and _valid_number(count):
-          metrics['active_listing_count'] = int(count)
+        metrics['active_listing_count'] = int(count)
 
     return metrics
 
