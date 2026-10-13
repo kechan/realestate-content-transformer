@@ -446,7 +446,8 @@ class LocallogicContentRewriter:
                                          property_type=None,
                                          transaction_type='SALE',
                                          sentence_limit=None,
-                                         include_start_with_guideline=True
+                                         include_start_with_guideline=True,
+                                         preserve_meaning_guideline=True
                                          )
 
     if geog_id is not None:
@@ -548,7 +549,8 @@ class LocallogicContentRewriter:
                                            property_type=None,
                                            transaction_type='SALE',
                                            sentence_limit=None,
-                                           include_start_with_guideline=True)  # for city level
+                                           include_start_with_guideline=True,
+                                           preserve_meaning_guideline=True)  # for city level
 
       # housing, transport, services, character = section_contents['housing'], section_contents['transport'], section_contents['services'], section_contents['character']
       housing = section_contents['housing']
@@ -571,9 +573,14 @@ class LocallogicContentRewriter:
           def _fmt_price(value):
             return f"${value:,}"
 
+          # Same idea for the listing count: pre-format with the thousands separator ("3,199")
+          # rather than relying on the LLM to add it when rendering a bare integer.
+          def _fmt_count(value):
+            return f"{value:,}"
+
           if lang == 'en':
             params_dict = {'As-of month': trend_metrics['month_year']}
-            params_dict['Number of residential properties for sale (all types)'] = trend_metrics['active_listing_count']
+            params_dict['Number of residential properties for sale (all types)'] = _fmt_count(trend_metrics['active_listing_count'])
             params_dict['Median MLS® list price, all property types'] = _fmt_price(trend_metrics['median_price_all'])
             if 'median_price_detached' in trend_metrics:
               params_dict['Median MLS® list price, single-family detached'] = _fmt_price(trend_metrics['median_price_detached'])
@@ -583,10 +590,11 @@ class LocallogicContentRewriter:
               params_dict['Median MLS® list price, townhouse'] = _fmt_price(trend_metrics['median_price_townhouse'])
             if 'median_price_condo' in trend_metrics:
               params_dict['Median MLS® list price, condominium'] = _fmt_price(trend_metrics['median_price_condo'])
+            params_dict['Place name (the geography this page describes)'] = city
             params_dict['Province (full name)'] = province_full
           elif lang == 'fr':
             params_dict = {'Mois de référence': trend_metrics['month_year']}
-            params_dict['Nombre de propriétés résidentielles à vendre (tous types)'] = trend_metrics['active_listing_count']
+            params_dict['Nombre de propriétés résidentielles à vendre (tous types)'] = _fmt_count(trend_metrics['active_listing_count'])
             params_dict['Prix médian sur MLS®, tous types de propriétés'] = _fmt_price(trend_metrics['median_price_all'])
             if 'median_price_detached' in trend_metrics:
               params_dict['Prix médian sur MLS®, maison unifamiliale détachée'] = _fmt_price(trend_metrics['median_price_detached'])
@@ -596,6 +604,7 @@ class LocallogicContentRewriter:
               params_dict['Prix médian sur MLS®, maison en rangée'] = _fmt_price(trend_metrics['median_price_townhouse'])
             if 'median_price_condo' in trend_metrics:
               params_dict['Prix médian sur MLS®, copropriété'] = _fmt_price(trend_metrics['median_price_condo'])
+            params_dict['Nom du lieu (la zone géographique décrite par cette page)'] = city
             params_dict['Province (nom complet)'] = province_full
           else:
             raise ValueError(f'Unsupported language: {lang}')

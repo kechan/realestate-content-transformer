@@ -1,0 +1,41 @@
+g30_c3x8drec, Strathcona County AB - stats attributed to "Greater Edmonton metropolitan area"; original never names the place
+g30_c3nv7dqf, Carstairs AB - "rented" became "available for rent"; only detached price eligible
+g30_c3p43f7s, Chestermere AB - residents/dwellings mixed ("residents own... the rest are rented"); mentions Greater Calgary; condo below threshold
+g30_c28wv731, White Rock BC - "around one third" built 1960s-70s became "largely"; no semi-detached data
+g30_c3nb2ekr, Black Diamond AB - no metrics (plain rewrite, must not invent stats); "mainly townhouses" lost "mainly"; flowery wording
+g30_dpxnh9by, Hamilton ON - "1960s and the 1980s" became "1960s to 1980s"; 4-digit count needs comma (3,199); all 4 types eligible; large market
+g30_dpwv7swm, Brant ON - opening said "the city, Ontario" (original never names the place); "1960s and the 1980s" became "1960s through the 1980s"; semi and condo below threshold
+g30_f0hx4tku, Thessalon ON - count 10, just under threshold (plain rewrite, no stats); "four or more bedrooms" became "four-bedroom"; "majority of the remaining" weakened; flowery ("cozy", "spacious")
+g30_f259cbnc, Mercier QC - count 7 (plain rewrite, no stats); "occupied by homeowners" became "owned by individuals"; "rented" became "leased"; original never names the place, mentions Greater Montreal; flowery
+g30_cbg5zt2v, Springfield MB - opening said "Greater Winnipeg, Manitoba" (original never names the place); rural municipality; detached only, same as overall median
+g30_cbfuw16s, West St. Paul MB - opening said "the Greater Winnipeg metropolitan area, Manitoba"; "around one quarter" lost "around"; "most of the remaining" became "many others"; count 12
+g30_cbfexy4h, Headingley MB - opening said "Greater Winnipeg, Manitoba"; count 11, exactly at threshold; "overwhelming majority" gets weakened; "three or more bedrooms" lost the 3 / 4+ split; $1M+ median
+g30_cbgjzmxh, St. Clements MB - "most of the remaining" became "a significant portion"; "roughly 95%" became "a notable 95%"; 3-bedroom homes lost; stale condo data below threshold
+g30_cbg4yvph, Taché MB - accented name; "40% of dwellings" became 40% of detached homes; detached median differs from overall; townhouse and condo below threshold
+g30_c8uywnsf, Moose Jaw SK - opening said "the city of Saskatchewan" (original never names the place); "1960s and the 2000s" must stay two decades; semi, townhouse, condo below threshold
+g30_c9k1wthu, Warman SK - "90% of population own" became "90% of housing owner-occupied, leaving 10% for renters"; dwelling-mix and bedroom facts get merged; mentions Greater Saskatoon; semi, townhouse, condo below threshold
+g30_c8vx51hm, Regina SK - "spread throughout several decades" became "evenly distributed"; all 4 types eligible, semi median above detached; large market
+g30_c9kydz2u, Prince Albert SK - 60% ownership figure tangled into the dwelling-mix sentence, rented share lost; "many of the remaining" weakened; detached and condo eligible, semi and townhouse not
+g30_c9ypr05q, Brabant Lake SK - no trend docs (plain rewrite, no stats); "community" became "neighborhood"; "many of the remaining" became "a significant number"; original never names the place
+g30_c3nfkdtg, Calgary AB - top 5 AB by listing inventory; 4-digit count
+g30_c3x29657, Edmonton AB - top 5 AB by listing inventory; 4-digit count; semi-detached below threshold
+g30_c3ngv8qq, Airdrie AB - top 5 AB by listing inventory
+g30_c2zf8jm7, Lethbridge AB - top 5 AB by listing inventory
+g30_c3r16mx6, Red Deer AB - top 5 AB by listing inventory
+g30_c28xmewz, Surrey BC - top 5 BC by listing inventory; 4-digit count
+g30_c2b2nw3h, Vancouver BC - top 5 BC by listing inventory; 4-digit count
+g30_c28rtppe, Richmond BC - top 5 BC by listing inventory; 4-digit count
+g30_c2b81v5q, Burnaby BC - top 5 BC by listing inventory; 4-digit count
+g30_c2g5f160, Kelowna BC - top 5 BC by listing inventory; 4-digit count
+g30_dpz89rm7, Toronto ON - top 5 ON by listing inventory; 4-digit count
+g30_f241etq5, Ottawa ON - top 5 ON by listing inventory; 4-digit count
+g30_dpxrgruz, Mississauga ON - top 5 ON by listing inventory; 4-digit count
+g30_dpwhr7kj, London ON - top 5 ON by listing inventory; 4-digit count
+g30_f25dfkk6, Montréal QC - top 5 QC by listing inventory; 4-digit count; accented name
+g30_f25e6q4s, Laval QC - top 5 QC by listing inventory
+g30_f244y37h, Gatineau QC - top 5 QC by listing inventory
+g30_f25cu1vp, Saint-Jean-sur-Richelieu QC - top 5 QC by listing inventory
+g30_f2m68c6b, Québec QC - top 5 QC by listing inventory; accented name, same as province
+g30_cbfgtjkk, Winnipeg MB - top 5 MB by listing inventory
+g30_cbbgw4pc, Brandon MB - top 5 MB by listing inventory
+g30_c9k0thxy, Saskatoon SK - top 5 SK by listing inventory; body drifted into past tense ("owned", "rented", "were") on new prompt with Luna

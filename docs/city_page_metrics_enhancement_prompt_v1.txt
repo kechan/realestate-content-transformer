@@ -1,5 +1,5 @@
 City Page Metrics Enhancement — Draft Prompt (v1)
-Status: CONFIRMED design, tested against exact final wording. Implementation not yet started.
+Status: IMPLEMENTED and live. The USER PROMPT section below reflects the current code (updated 2026-10-13); the worked example and tested output further down are the original v1 design record.
 Companion doc: city_page_metrics_enhancement_spec_v1.md
 
 ================================================================================
@@ -8,10 +8,10 @@ SYSTEM PROMPT (unchanged from today)
 
 You are locallogic writer with lot of experience working with neighborhood profiles.
 Please rewrite the below with interesting variations keeping the tone and style similar.
-There is 1 section and It is delimited by <housing></housing>.
+There is 1 section and it is delimited by <housing></housing>.
 
 ================================================================================
-USER PROMPT (v1, final design)
+USER PROMPT (current, as built by pipeline.py + chatgpt.py)
 ================================================================================
 
 For housing section only if present, please incorporate these data points:
@@ -23,7 +23,8 @@ For housing section only if present, please incorporate these data points:
   5) Median MLS® list price, semi-detached: {{median_price_semi_detached}}
   6) Median MLS® list price, townhouse: {{median_price_townhouse}}
   7) Median MLS® list price, condominium: {{median_price_condo}}
-  8) Province (full name): {{province_full}}
+  8) Place name (the geography this page describes): {{place_name}}
+  9) Province (full name): {{province_full}}
 
 <housing>{{original_locallogic_housing_text}}</housing>
 
@@ -31,33 +32,54 @@ IMPORTANT
 
 0. Wrap each section in its own tag, e.g. <housing></housing>
 1. Ensure the rewrite is in the same language as the original content.
-2. For housing if present, the first sentence must state: 'As of {as-of month}, there are {active listing count} homes for sale in {city}, {province}, with a median MLS® list price of {overall median list price}.' Use data points 1, 2, 3, and 8 above for the bracketed values; infer the city name from the original content as before.
-3. Immediately follow with a second sentence starting 'By property type, the median was' that reports the median list price for each property type provided in data points 4-7, in the order detached, semi-detached, townhouse, condominium. If a data point is genuinely missing, omit that property type rather than inventing a value.
-4. Do not use the word "average" anywhere — all figures are medians.
-5. After the two opening sentences, continue rewriting the remaining original content (ownership rate, housing type mix, bedroom counts, construction era, etc.) in the same tone as before.
-6. Keep the length in the same general ballpark as the original, but do NOT drop or shorten any of data points 1-7, guideline 3's property-type breakdown, or guideline 5's remaining original content in order to hit a tighter word count. Completeness of the required data takes priority over word-count parity.
-7. Verbiage may not be too "flowery"
+2. For housing if present, the first sentence must state: 'At the end of {as-of month}, there were {active listing count} homes for sale in {place name}, {province}, with a median MLS® list price of {overall median list price} across all property types.' Use the As-of month, active-listing-count, overall-median, Place name, and province data points above for the bracketed values, exactly as given. Do not replace the Place name with any other place mentioned in the original content (e.g. a metropolitan area, region, or neighbouring city), and do not use a generic phrase such as "this city" or "this municipality" in this sentence. All figures and facts describe the Place name only -- if the original content mentions a larger area (e.g. "this part of the Greater X metropolitan area"), that only describes where the place is located; never attribute its listings, prices, or percentages to the larger area. After the first sentence you may refer to the place by its Place name or by the generic term the original content uses (e.g. "this town", "this municipality").
+3. Immediately follow with a second sentence starting 'By property type, the median was' that reports the median list price for each property-type data point provided above, in the order detached, semi-detached, townhouse, condominium. If a data point is genuinely missing, omit that property type rather than inventing a value.
+4. Do not use the word "average" anywhere -- all figures are medians.
+5. Prioritize quantitative, factual content over descriptive/qualitative content. The metrics sentences above, plus any percentage or numeric facts from the original content (e.g. ownership/rental tenure, building-age/construction-era breakdown), should be retained in plain factual language. More qualitative or descriptive material from the original content (e.g. general characterizations of dwelling-type mix or bedroom-size composition) should be compressed tightly, or omitted if it doesn't add meaningful numeric value beyond what's already stated -- do not preserve or embellish it at length.
+6. Do not pad length to match the original -- a shorter result that keeps only the substantive quantitative content is preferred over a longer one that retains all original material.
+7. Verbiage may not be too "flowery"; state facts plainly, with no added descriptive or qualitative commentary beyond what's explicitly retained.
 8. Be sure to retain numerical and highway or major street info.
+9. Preserve the meaning of every fact you keep. You may reword, but you may not change what is being claimed:
+   - Keep qualifiers and hedges at the same strength (e.g. mainly, mostly, roughly, about, nearly, many, the majority of). Do not drop, strengthen, or weaken them: "the remainder are mainly townhouses" must not become "townhouses account for the rest".
+   - Keep what each figure measures. A share of residents/population stays about people (owners, renters); a share of units/dwellings stays about dwellings (owner-occupied, rented). Do not mix the two in one sentence.
+   - "Rented" means occupied by renters. Never rephrase it as "available for rent" or "for rent".
+   - If you cannot rephrase a fact without changing its meaning, keep the original wording.
 
-NOTE on guideline 2: unlike the earlier draft, this is now STATIC instruction text (no
-per-call Python f-string needed for the guideline itself) — mirrors how the *existing*
-live prompt's city-name handling already works: the model infers the city name from the
-<housing> content it's given, rather than code injecting it into the guideline sentence.
-The only literal Python-templated values live in the numbered data points list above,
-which construct_openai_user_prompt() already builds generically from params_dict — no
-new function parameters (e.g. a "city" arg) are needed in chatgpt.py.
+NOTE on data points: all values are pre-formatted in pipeline.py and are meant to be
+copied verbatim -- prices as "$725,000" (_fmt_price) and the listing count with its
+thousands separator, e.g. "3,199" (_fmt_count). A property type whose own month-end
+listing count is below the threshold (11) has no data point, and the remaining points
+renumber. If the all-types count is below the threshold or missing, no data points are
+passed at all and the page gets a plain rewrite: guidelines 2-4 are dropped and the
+"preserve the meaning" guideline is numbered 8 instead of 9.
 
-NOTE on data point 8: {{province_full}} is the full province name (e.g. "Ontario"), not
-prov_code ("ON"). Added because, unlike city name, province is never mentioned anywhere
-in the original LocalLogic housing text — GPT has nothing to infer it from, so it must
-be supplied explicitly. The pipeline currently only carries prov_code — a code-to-full-
-name mapping needs to be added in realestate_content_transformer/data/pipeline.py before
-this can be filled in. This is a new, small implementation requirement, not previously
-scoped.
+NOTE on guideline 2 and the Place name data point: guideline 2 is static instruction
+text; the place name is supplied as a data point (data.name, same value pipeline.py
+calls `city`) and is no longer inferred from the <housing> content. Inference failed
+when the original text never names the place or mentions a larger area: PROD openings
+such as "Greater Winnipeg, Manitoba" for Springfield, West St. Paul and Headingley,
+"the city, Ontario" for Brant, and "the city of Saskatchewan" for Moose Jaw. The label
+says "Place name", not "City name", because the page can be a county, rural
+municipality, town or reserve. No "city" argument was added to
+construct_openai_user_prompt(); the value travels through params_dict like the others.
+
+NOTE on guideline 9: appended only when LocalLogicGPTRewriter is constructed with
+preserve_meaning_guideline=True. pipeline.py sets it for the two city-level writers;
+it defaults to False so the subpage (property-type) prompts that share this code branch
+are unchanged.
+
+NOTE on the Province data point: {{province_full}} is the full province name (e.g.
+"Ontario"), not prov_code ("ON"). Unlike the place name, province is never mentioned in
+the original LocalLogic housing text, so it has always been supplied explicitly;
+pipeline.py maps prov_code to the full name.
 
 ================================================================================
 WORKED EXAMPLE — Barrie, ON (real PROD data, verified 2026-07-20)
 ================================================================================
+NOTE: this section and TESTED OUTPUT below are the ORIGINAL v1 design record (prompt
+wording and output as tested in July-August 2026). They are kept for history and do
+not match the current prompt above -- see the DECISION LOG entries dated 2026-10.
+
 
 geog_id: g30_dpzk6g9n | longId: on_barrie
 
@@ -142,3 +164,35 @@ inferred.
 Prompt design: CONFIRMED via testing (see TESTED OUTPUT above). Ready for
 implementation into pipeline.py / chatgpt.py per the constraints in
 city_page_metrics_enhancement_spec_v1.md §6.
+
+Opening sentence timing: CHANGED (2026-10, commit "Clarify historical timing in
+city-page statistics"). The opening is now "At the end of {{month_year}}, there were
+{{active_listing_count}} homes for sale in ... across all property types." because the
+count is a month-end snapshot (mth_end_snapshot_listing_count), not a live figure.
+
+Guidelines 5-7: CHANGED after v1 design. The original "keep all remaining original
+content, same length ballpark" guidelines were replaced by the current ones that
+prioritize quantitative facts, allow descriptive material to be compressed or omitted,
+and prefer a shorter result over padding.
+
+Place name supplied, not inferred: CHANGED (2026-10-13). Reverses the 2026-08
+"Guideline 2 implementation mechanism" decision above in one respect: the place name is
+now passed as a data point. Review of PROD rewrites (AB, BC, ON, QC, MB, SK) found
+openings naming a metro area, "the city", or the province when the original text did
+not name the place. The trailing "Keep the opening in past tense." was also removed as
+redundant with the quoted opening sentence.
+
+Guideline 9 (preserve meaning): ADDED (2026-10-13). The same review found qualifiers
+dropped or changed in strength ("mainly", "roughly", "most" vs "many"), shares of
+people restated as shares of dwellings, and "rented" turned into "available for rent".
+Priority set by user: accuracy over variation.
+
+Listing count formatting: CHANGED (2026-10-13). The count is pre-formatted in code with
+its thousands separator after PROD pages showed "1926" and "1187".
+
+Testing of the 2026-10-13 changes: 41 geographies in evals/eval_geog_ids.txt (19 with
+known PROD mistakes, 22 largest markets across AB, BC, ON, QC, MB, SK), prompts
+generated by the real pipeline code and run by hand on GPT-6 Luna in ChatGPT. No
+wrong-place openings, no invented or misordered prices, no missing separators. Not
+covered: French pages, output through the API, and gpt-4o with the new wording. See
+evals/README.md.
