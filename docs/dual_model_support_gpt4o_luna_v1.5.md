@@ -1,10 +1,11 @@
-# Dual-Model Support: gpt-4o + gpt-5.6-luna — Scope, Findings & Solution (v1.5)
+# Dual-Model Support: gpt-4o + gpt-5.6-luna / gpt-6-luna — Scope, Findings & Solution (v1.5)
 
-**Status:** Research complete, solution identified, NOT YET IMPLEMENTED.
+**Status:** Research complete for both candidate replacement models. Solution identified for `gpt-5.6-luna` (§1-7, below). A newer, cheaper candidate, `gpt-6-luna`, has since been proposed and given initial empirical verification — see §8. NOT YET IMPLEMENTED (neither model).
 **Prerequisite:** v1 (`city_page_metrics_enhancement_spec_v1.md`) has run cleanly across all provinces and is considered bug-free. This phase (v1.5) is the next step after that, before any v2 work.
-**Goal:** A single codebase (`raa`, `realestate-spam`, `realestate-content-transformer`) that works correctly with both `gpt-4o` (what v1 ships with) and `gpt-5.6-luna` (a ~10x cheaper model OpenAI now recommends for cost-sensitive workloads), with no per-model conditional/branching logic required.
+**Goal:** A single codebase (`raa`, `realestate-spam`, `realestate-content-transformer`) that works correctly with `gpt-4o` (what v1 ships with) and a cheaper reasoning model OpenAI recommends for cost-sensitive workloads, with no per-model conditional/branching logic required.
+**Current model preference:** `gpt-6-luna` is the proposed target (released 2026-09-22, cheaper than `gpt-5.6-luna` and empirically confirmed to need no SDK upgrade either — see §8). `gpt-5.6-luna`'s research and fix plan (§1-7) is kept intact and still fully valid as a fallback, in case `gpt-6-luna` testing, availability, or pricing changes make it the better choice instead.
 
-If you're a fresh thread picking this up: read this whole document before touching code. It contains everything discovered so far — you should not need to re-derive any of it.
+If you're a fresh thread picking this up: read this whole document before touching code. It contains everything discovered so far — you should not need to re-derive any of it. Read §8 first if the goal is `gpt-6-luna`; §1-7 describe the `gpt-5.6-luna` alternative/fallback.
 
 ---
 
@@ -162,3 +163,65 @@ Before touching any project code, re-run (or write fresh) a scratch script like 
 - **`LIGHT_WEIGHT_LLM`** (used for the health-check-only writer in `run_locallogic_content_rewriter.py`) is currently hardcoded to `'gpt-4o'` separately from `LLM`. Should it also move to `'gpt-5.6-luna'` for consistency, or is there a reason to keep the health check on a different (possibly more reliable/simpler) model than the actual rewrite model? Not discussed/decided.
 - **Model configurability**: currently the model is a hardcoded source constant with no CLI flag or `config.yaml` key (raised during v1 work, deliberately deferred). If Luna migration happens, is this still deferred, or does it become worth doing at the same time (so switching models doesn't require a code edit + redeploy)? Not decided.
 - Whether `DisplayNameOriginAgent`, `FirstTouchNoteSpamDetectorAgent`, `DataAugmentationAgent` (other `chatgpt.py` classes, unrelated to this project's actual use of `LocalLogicGPTRewriter`) should also be deliberately migrated to Luna, or just incidentally left working via the shared `raa.py` fix without anyone actively re-validating them. Out of scope for this project's phase either way, but worth being aware the shared fix touches their code path too.
+
+---
+
+## 8. `gpt-6-luna` — proposed newer/cheaper candidate (2026-10, not yet implemented)
+
+**Status:** Proposed by another team as the current OpenAI-recommended model for this kind of task. Given a first round of empirical verification (below) with encouraging results. Not yet in `AVAILABLE_GPT_MODELS`, not yet wired into any project code. Everything in this section is additional to, not a replacement for, §1-7 — `gpt-5.6-luna` remains a fully-researched fallback if `gpt-6-luna` turns out not to work out (pricing change, availability, a quality regression found in fuller testing, etc.).
+
+### 8.1 Why it looks attractive
+
+Released 2026-09-22. Pricing: **$0.10/M input, $0.50/M output** (output price fell 58% from its predecessor, `gpt-5.6-luna`, which was $1.20/M output). Compared to `gpt-4o`'s grandfathered legacy pricing ($2.50/$10 per 1M), this is roughly a 20-25x cost reduction. 1.1M token context window, up to 128K max output tokens (far beyond anything this project needs). Sources (third-party model-parameter aggregators, not OpenAI's own docs page — worth a direct confirmation if this becomes load-bearing): [llmgateway.io/models/gpt-6-luna](https://llmgateway.io/models/gpt-6-luna), [modelparams.dev/models/openai/gpt-6-luna](https://modelparams.dev/models/openai/gpt-6-luna).
+
+### 8.2 No SDK upgrade needed — same conclusion as §3.2, now confirmed for this model too
+
+Same reasoning as `gpt-5.6-luna`: the installed `openai==0.27.2` on GCP forwards kwargs straight to the REST API with no client-side schema validation, so model-specific parameter names newer than the SDK itself still work. Confirmed empirically below by actually calling `gpt-6-luna` through this exact legacy call style, on `python39_env` (which matches GCP's installed `openai==0.27.2` exactly).
+
+### 8.3 The exact call pattern tested
+
+```python
+import openai
+openai.api_key = os.environ['JUMPTOOLS_OPENAI_API_KEY']
+
+response = openai.ChatCompletion.create(
+    model="gpt-6-luna",
+    messages=messages,
+    reasoning_effort="low",
+    max_completion_tokens=3000,
+)
+content = response["choices"][0]["message"]["content"]
+```
+
+Notes on each parameter:
+- **`max_completion_tokens=3000`**: not `max_tokens` — same rename as `gpt-5.6-luna` needs (§1, §4). Sized generously on purpose; see §8.4 for why this is safe.
+- **`reasoning_effort="low"`**: a new parameter not used anywhere in the `gpt-5.6-luna` plan. `gpt-6-luna` is a reasoning model with hidden reasoning tokens (like Luna generally — see §3.3), and this knob appears to meaningfully reduce how much of the completion budget goes to invisible reasoning rather than visible output (§8.4). Not tested without it; unverified whether omitting it or using a higher effort level changes output quality or just cost.
+- **No `temperature` passed.** Third-party docs ([modelparams.dev](https://modelparams.dev/models/openai/gpt-6-luna)) say `gpt-6-luna` accepts `temperature` (default `1`, range 0-2) unlike the stricter o-series reasoning models and unlike `gpt-5.6-luna` (which reportedly locks to `temperature=1` only). Since the default is already `1` — the same value `chatgpt.py:326` already passes explicitly for `gpt-4o` — omitting it changes nothing behaviorally; it was left out here only because that's how it was first proposed to test, not because omitting it is specially recommended. Keeping it explicit (`temperature=1.0`) in any real implementation is probably more future-proof than relying on an un-pinned default.
+
+### 8.4 Empirical test — 3 rounds against real Barrie data
+
+Methodology matched §6.2 (standalone script, bypassing `raa`, no project files touched) but used the **real production prompt** via `LocalLogicGPTRewriter.construct_openai_user_prompt()` against Barrie's actual live PROD data (`geog_id='g30_dpzk6g9n'`), rather than a synthetic prompt — SEMI-DETACHED was genuinely gated out by the `MIN_LISTING_COUNT_FOR_MEDIAN` threshold (real count was 4), giving a live test of the missing-property-type path too.
+
+| Round | Completion tokens | Reasoning tokens | Visible words | `finish_reason` | Says "average"? |
+|---|---|---|---|---|---|
+| 1 | 223 | 88 (39%) | 75 | `stop` | No |
+| 2 | 211 | 76 (36%) | 75 | `stop` | No |
+| 3 | 296 | 161 (54%) | 75 | `stop` | No |
+
+Findings:
+- **No SDK/parameter errors** — `reasoning_effort` and `max_completion_tokens` were both accepted cleanly by the legacy `openai==0.27.2` call style.
+- **Reasoning-token overhead is lower than `gpt-5.6-luna`'s** — 36-54% here vs. ~75% measured for `gpt-5.6-luna` in §3.3 on a comparably-sized prompt. Likely some combination of `gpt-6-luna` being more efficient and `reasoning_effort="low"` actively reducing it; not isolated which factor dominates.
+- **3000-token cap is very generous, not actually spent** — actual usage topped out at 296 total completion tokens, under 10% of the cap. Confirms the "cap is a ceiling, not a cost" framing (§4.4) — the model stopped on its own per the prompt's own guidelines every time, nowhere near truncating.
+- **Output is close to deterministic for this task** — rounds 1 and 2 are word-for-word identical text; round 3 differs by exactly one synonym swap ("About 70%" → "Around 70%"), nothing else. All three used the exact same numbers, sentence structure, and word count (75 words). This is a small sample (n=3) and all against one geog_id with fairly short/unambiguous original content — not yet tested against a longer or messier original-content case where there's more room for the model to vary.
+- **Guideline compliance checked and correct**: opening sentence in the exact required structure, property-type breakdown in the correct order with SEMI-DETACHED cleanly omitted (not fabricated), no "average," original ownership/construction-era facts retained, more qualitative original content compressed per the prompt's guideline rather than preserved verbatim.
+
+Raw results (`gpt6_luna_results.json`, full response objects including all three complete outputs) were saved to this session's scratchpad directory, which is ephemeral — copy to `~/tmp/` or similar if these need to be kept past the session.
+
+### 8.5 What's still needed before this could replace §1-7's plan
+
+- Add `'gpt-6-luna'` to `AVAILABLE_GPT_MODELS` in `raa.py` (same one-line addition already done for `gpt-5.6-luna`, §3.5).
+- Apply the same `max_tokens` → `max_completion_tokens` rename across all three `raa.py` call sites (§4.1-4.3) — not yet done for either model.
+- Decide whether to also pass `reasoning_effort` through `raa.py`'s call signature (currently not a parameter anywhere in `get_completion_from_messages()`/`get_completion()`), or hardcode `"low"` inside the relevant `_openai_ChatCompletion_*` functions.
+- Full regression pass per §6.3's checklist (Barrie + Coquitlam for the missing-type edge case, `gpt-4o` regression check) — only Barrie has been tried so far, and only for the new-model side, not yet re-validating `gpt-4o` is unaffected.
+- More than 3 rounds, and at least one longer/messier-content geog_id, to get a more meaningful read on output variation (§8.4's last finding).
+- `test_openai_health()`'s own separate hardcoded `max_tokens=2` (§3.4) still needs the same treatment regardless of which Luna model is chosen — not yet touched for either.
