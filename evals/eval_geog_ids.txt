@@ -39,3 +39,58 @@ g30_f2m68c6b, Québec QC - top 5 QC by listing inventory; accented name, same as
 g30_cbfgtjkk, Winnipeg MB - top 5 MB by listing inventory
 g30_cbbgw4pc, Brandon MB - top 5 MB by listing inventory
 g30_c9k0thxy, Saskatoon SK - top 5 SK by listing inventory; body drifted into past tense ("owned", "rented", "were") on new prompt with Luna
+g30_c3g3zvu3, Grande Prairie AB - medium AB; all 4 types eligible
+g30_c8ck8yt9, Medicine Hat AB - medium AB; all 4 types eligible; "no single building boom" construction text
+g30_c3jfrxyd, Canmore AB - medium AB; resort town ("this town"); all 4 types eligible
+g30_c29p1kf8, Abbotsford BC - medium BC; 4-digit count; semi-detached below threshold
+g30_c342k4h0, Kamloops BC - medium BC; all 4 types eligible
+g30_c38dy0t2, Prince George BC - medium BC; semi-detached below threshold
+g30_c2878bj4, Victoria BC - medium BC; condo is the only eligible type
+g30_dpwz0be2, Kitchener ON - medium ON; semi-detached below threshold
+g30_dpzk6g9n, Barrie ON - medium ON; semi-detached below threshold; worked example in the v1 prompt doc
+g30_drcsh0d5, Kingston ON - medium ON; semi-detached below threshold
+g30_f0q35c2t, Greater Sudbury ON - medium ON; "Greater" is part of the place's own name; detached only
+g30_f25f83rj, Brossard QC - medium QC; detached and condo eligible
+g30_f24ywv02, Mont-Tremblant QC - medium QC; original never names the place; detached and condo eligible
+g30_f25fbvhx, Longueuil QC - medium QC; mentions Greater Montreal; "evenly split between renters and owners"; detached and condo eligible
+g30_f2hf63p5, Sherbrooke QC - medium QC; "evenly split between owners and renters"; detached only
+g30_f25ke0vu, Saint-Jérôme QC - medium QC; accented name; detached and condo eligible
+g30_cbg1zbjr, Steinbach MB - medium MB; count 11, exactly at threshold; detached only
+g30_cbgj71bd, Selkirk MB - medium MB; count 9 (plain rewrite, no stats)
+g30_cbfh72u9, Portage la Prairie MB - medium MB; count 9 (plain rewrite, no stats); "substantial proportion of single detached homes" has no figure
+g30_c8gq554t, Swift Current SK - medium SK; detached only
+g30_c97h0n0s, North Battleford SK - medium SK; detached only
+g30_c9p5kk7u, Yorkton SK - medium SK; detached only; "about three quarters"
+g30_c8y4sc5n, Weyburn SK - medium SK; detached only
+g30_c8wz8d0j, Estevan SK - medium SK; detached only; "roughly three quarters"
+g30_c3uxfktb, Peace River AB - rural AB; "this town"; mobile homes in dwelling mix; detached only
+g30_c2zqwx2d, Vulcan AB - rural AB; "no single construction boom"; detached only
+g30_c88r9knx, Milk River AB - rural AB; count 10 (plain rewrite, no stats); "substantial percentage" has no figure
+g30_c2dzpbe6, Okanagan-Similkameen A BC - rural BC; original calls the place "Rural Osoyoos", not its page name; "regional district electoral area"; $1M+ median; detached only
+g30_c37hw115, Valemount BC - rural BC; "this village"; "most housing built in the 1960s and 1970s"; detached only, same as overall median
+g30_c1x5wcjb, Fraser Lake BC - rural BC; count 7 (plain rewrite, no stats); "this village"; row houses
+g30_f208q8mp, Bancroft ON - rural ON; original says "this part of the Hastings metropolitan area"; detached only, same as overall median
+g30_f0s8jgz4, Chapleau ON - rural ON; "this township"; "a majority of the housing growth occurred pre-1960"; $249,999 detached
+g30_dptttzn3, Kettle Point 44 ON - rural ON; First Nation reserve ("this reserve"), number in name; count 10 (plain rewrite, no stats)
+g30_f273wvev, Saint-Michel-des-Saints QC - rural QC; original never names the place ("the municipality"); detached only, same as overall median
+g30_f24uj0fe, Grenville-sur-la-Rouge QC - rural QC; "about 85% of units"; detached only, median above overall
+g30_f0rw8ncx, Notre-Dame-du-Nord QC - rural QC; count 6 (plain rewrite, no stats)
+g30_cc4bpwme, Gimli MB - rural MB; count 10 (plain rewrite, no stats); "this rural municipality"
+g30_cbb0mcyz, Melita MB - rural MB; count 5 (plain rewrite, no stats); original never names the place and no place name is passed on this path
+g30_cc842uhv, The Pas MB - rural MB; count 3 (plain rewrite, no stats); "55% occupied by homeowners and 45% rented"
+g30_c9rhws4k, Hudson Bay SK - rural SK; a town, not the bay; detached only, same as overall median; body drifted into past tense ("were occupied", "ranged") on new prompt with Luna
+g30_c8u5xr27, Gravelbourg SK - rural SK; count 12; "buildings are quite old"; detached only, same as overall median
+g30_c8f5uucx, Maple Creek SK - rural SK; count 7 (plain rewrite, no stats); "homes are quite old"
+g30_dxgnyskn, Halifax NS - top 5 NS by listing inventory; 4-digit count; all 4 types eligible; "did not experience a single building boom"
+g30_f8jjv874, Cape Breton NS - top 5 NS by listing inventory; "1960s and the 1980s" must stay two decades; detached only
+g30_dxfhegge, Lunenburg NS - top 5 NS by listing inventory; the municipal district, not the town of the same name (g30_dxfk2qef, same longId); "mainly mobile homes"; detached only, same as overall median
+g30_f8550kb9, Colchester, Subd. B NS - top 5 NS by listing inventory; place name abbreviated ("Subd.") but original says "Subdivision"; detached and semi eligible
+g30_dxfmbxdn, Chester NS - top 5 NS by listing inventory; "the rest are mainly townhouses"; detached only
+g30_dxczy73w, Kings, Subd. A NS - medium NS; original misspells the name as "Kings Subdivision An"; four or more bedrooms listed first; detached only
+g30_f857q6zj, New Glasgow NS - medium NS; "this town"; "homes are quite old"; detached only, same as overall median
+g30_f851bw89, Truro NS - medium NS; "roughly 60%" for both dwelling mix and ownership; detached only, median above overall
+g30_dxfh7xw1, Bridgewater NS - medium NS; mobile homes in dwelling mix; detached only
+g30_f84kdvzh, Amherst NS - medium NS; "1960s and the 2000s" must stay two decades; detached only, same as overall median
+g30_f84620s5, Parrsboro NS - rural NS; count 13, just above threshold; "homes are quite old"; detached only, same as overall median
+g30_dxc8w7f3, Lockeport NS - rural NS; count 9 (plain rewrite, no stats); "a majority of the housing growth occurred before the 1960s"
+g30_dxcqt30q, Annapolis Royal NS - rural NS; count 9 (plain rewrite, no stats); "evenly split between owners and renters"

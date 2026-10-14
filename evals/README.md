@@ -66,8 +66,10 @@ For each output, against the original text and the source metrics:
 The list starts with geographies that had mistakes in PROD reviews. Planned coverage, per province:
 
 - The 5 largest geographies by listing inventory. These are the most important and visible pages.
-- 5 sampled medium-size geographies.
-- 5 sampled rural geographies.
+- 5 medium-size geographies: hand-picked from the places ranked just below the top 5 by listing inventory, with an English profile. "Medium" is relative to the province: about 150-1,100 listings in AB, BC and ON, 50-100 in QC, 30-65 in SK, about 10 in MB, where only eight places reach the threshold, and 30-95 in NS. Entries already in the list for a known issue count towards the five.
+- Rural geographies: small towns, villages, townships, rural municipalities, electoral areas and reserves away from the big metro areas, with an English profile. Most fall below the listing threshold and take the plain-rewrite path, so 3 per province is enough (not 5): a mix of places just above the threshold and places below it.
+
+Done so far for AB, BC, ON, QC, MB, SK and NS: largest, medium and rural. Only geographies with an English profile are picked; in NS many of the top-ranked places (e.g. Queens, East Hants) have none. The other provinces and territories are not done.
 
 Also:
 
@@ -80,5 +82,5 @@ Also:
 - A script to generate outputs for the list and save them locally.
 - Automated checks. The statistics and form checks are deterministic and can be coded; the meaning checks are manual for now.
 - A stored baseline of accepted outputs to diff against.
-- The largest / medium / rural geographies per province described above.
+- Any geographies for provinces and territories outside AB, BC, ON, QC, MB, SK and NS.
 - Known-issue cases from ON and QC, and French pages.
