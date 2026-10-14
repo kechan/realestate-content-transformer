@@ -9,9 +9,10 @@ from datetime import datetime
 from realestate_content_transformer.data.pipeline import LocallogicContentRewriter
 from realestate_spam.llm.chatgpt import LocalLogicGPTRewriter
 
-LIGHT_WEIGHT_LLM = 'gpt-4o'
-# LLM = 'gpt-4-1106-preview'
-LLM = 'gpt-4o'
+# Back out to gpt-4o by setting these to 'gpt-4o'; raa picks the right API params per model.
+LIGHT_WEIGHT_LLM = 'gpt-6-luna'
+# LLM = 'gpt-4o'
+LLM = 'gpt-6-luna'
 
 def load_config(yaml_config_file):
   with open(yaml_config_file, 'r') as f:
