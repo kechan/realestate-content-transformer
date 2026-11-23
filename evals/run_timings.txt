@@ -1,0 +1,51 @@
+Run timings and cost
+====================
+
+Purpose
+-------
+Track how long PROD rewrite runs take, and what they cost, so we can:
+- compare models (gpt-4o vs gpt-6-luna) and prompt versions,
+- spot slowdowns from model or API drift,
+- plan run windows and API credit top-ups.
+
+What to record per run
+----------------------
+- Date: when the run was launched.
+- Province, lang.
+- Scope: "city" (city pages only, subpages skipped as already at this month's
+  version) or "city+subpages".
+- Model.
+- Rewrites: rewrites_count.
+- Duration (min): total wall time.
+- Avg sec/rewrite: duration * 60 / rewrites.
+- Cost: API balance before minus after (the key is used only by this project).
+  Only tracked for the 2026-10-15 ON run; dropped after that.
+- Notes: errors, reruns, anything unusual.
+
+Where the numbers come from
+---------------------------
+- Duration and rewrites_count: run_entry_table.csv on the PROD VM (written by
+  run_locallogic_content_rewriter.py; duration is in minutes).
+- Scope: the run log. "Skipping rewrite ... already at version YYYYMM" lines
+  mean the subpages were skipped.
+- Cost: the OpenAI account balance noted before and after the run.
+
+Duration is wall time. It includes ES reads and the 0.01 s sleep per
+geography (wait_sec in pipeline.py), not only model latency.
+
+Cost ceiling for a full monthly run
+-----------------------------------
+ON is the largest province, so:
+  ON city-page cost x 7 (city page + 6 property-type subpages) x 13 provinces
+is a safe, deliberately loose upper bound. Use it to time credit top-ups.
+
+Current estimate (gpt-6-luna, from the 2026-10-15 ON run):
+  0.06 x 7 x 13 = ~$5.50 per full monthly run (up to ~$6.40 if the
+  ON cost was really 0.07). Note the balance is shown to 2 decimals only.
+
+Data
+----
+Date        | Prov | Lang | Scope | Model      | Rewrites | Duration (min) | Avg sec/rewrite | Cost (USD) | Notes
+------------|------|------|-------|------------|----------|----------------|-----------------|------------|------
+2026-10-15  | ON   | en   | city  | gpt-6-luna | 313      | 17.0           | 3.3             | 0.06       | Balance 9.74 -> 9.68 (2-decimal display, so roughly 0.05-0.07; ~$0.0002/rewrite). First gpt-6-luna PROD province run. City phase 03:36:37 -> 03:53:36 (health check to "[rewrite_cities] Finished", includes ES extract). Whole run ~19.5 min (ended 03:56:06); subpages were nearly all skipped (already at 202610), RENTAL rewrote 3.
+2026-10-16  | QC   | en   | city  | gpt-6-luna | 649      | 34.0           | 3.1             | n/a        | Run 10. City phase 03:06:07 -> 03:40:07 (health check to "[rewrite_cities] Finished"). Whole run ~40.7 min (03:06:04 -> 03:46:47). Subpages: 25 each for LUXURY/CONDO/SEMI-DETACHED/TOWNHOUSE/INVESTMENT, 26 RENTAL, ~1 min per type. The 25 are geogs that share a longId with another geog (version read back via localLogicId never matches), redone every run.

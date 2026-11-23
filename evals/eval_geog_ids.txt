@@ -3,7 +3,7 @@ g30_c3nv7dqf, Carstairs AB - "rented" became "available for rent"; only detached
 g30_c3p43f7s, Chestermere AB - residents/dwellings mixed ("residents own... the rest are rented"); mentions Greater Calgary; condo below threshold
 g30_c28wv731, White Rock BC - "around one third" built 1960s-70s became "largely"; no semi-detached data
 g30_c3nb2ekr, Black Diamond AB - no metrics (plain rewrite, must not invent stats); "mainly townhouses" lost "mainly"; flowery wording
-g30_dpxnh9by, Hamilton ON - "1960s and the 1980s" became "1960s to 1980s"; 4-digit count needs comma (3,199); all 4 types eligible; large market
+g30_dpxnh9by, Hamilton ON - SHARED LONGID with Hamilton Township (g30_drb6s2f7); page must show the city; "1960s and the 1980s" became "1960s to 1980s"; 4-digit count needs comma (3,199); all 4 types eligible; large market
 g30_dpwv7swm, Brant ON - opening said "the city, Ontario" (original never names the place); "1960s and the 1980s" became "1960s through the 1980s"; semi and condo below threshold
 g30_f0hx4tku, Thessalon ON - count 10, just under threshold (plain rewrite, no stats); "four or more bedrooms" became "four-bedroom"; "majority of the remaining" weakened; flowery ("cozy", "spacious")
 g30_f259cbnc, Mercier QC - count 7 (plain rewrite, no stats); "occupied by homeowners" became "owned by individuals"; "rented" became "leased"; original never names the place, mentions Greater Montreal; flowery
@@ -45,7 +45,7 @@ g30_c3jfrxyd, Canmore AB - medium AB; resort town ("this town"); all 4 types eli
 g30_c29p1kf8, Abbotsford BC - medium BC; 4-digit count; semi-detached below threshold
 g30_c342k4h0, Kamloops BC - medium BC; all 4 types eligible
 g30_c38dy0t2, Prince George BC - medium BC; semi-detached below threshold
-g30_c2878bj4, Victoria BC - medium BC; condo is the only eligible type
+g30_c2878bj4, Victoria BC - BOARD CATEGORY CODES (VICTORIA board): about a third of residential sale listings have category 999, so the detached price is missing; medium BC; condo is the only eligible type
 g30_dpwz0be2, Kitchener ON - medium ON; semi-detached below threshold
 g30_dpzk6g9n, Barrie ON - medium ON; semi-detached below threshold; worked example in the v1 prompt doc
 g30_drcsh0d5, Kingston ON - medium ON; semi-detached below threshold
@@ -57,7 +57,7 @@ g30_f2hf63p5, Sherbrooke QC - medium QC; "evenly split between owners and renter
 g30_f25ke0vu, Saint-Jérôme QC - medium QC; accented name; detached and condo eligible
 g30_cbg1zbjr, Steinbach MB - medium MB; count 11, exactly at threshold; detached only
 g30_cbgj71bd, Selkirk MB - medium MB; count 9 (plain rewrite, no stats)
-g30_cbfh72u9, Portage la Prairie MB - medium MB; count 9 (plain rewrite, no stats); "substantial proportion of single detached homes" has no figure
+g30_cbfh72u9, Portage la Prairie MB - SHARED LONGID with the rural municipality (g30_cbfhkydn, no English housing profile); medium MB; count 9 (plain rewrite, no stats); "substantial proportion of single detached homes" has no figure
 g30_c8gq554t, Swift Current SK - medium SK; detached only
 g30_c97h0n0s, North Battleford SK - medium SK; detached only
 g30_c9p5kk7u, Yorkton SK - medium SK; detached only; "about three quarters"
@@ -83,7 +83,7 @@ g30_c8u5xr27, Gravelbourg SK - rural SK; count 12; "buildings are quite old"; de
 g30_c8f5uucx, Maple Creek SK - rural SK; count 7 (plain rewrite, no stats); "homes are quite old"
 g30_dxgnyskn, Halifax NS - top 5 NS by listing inventory; 4-digit count; all 4 types eligible; "did not experience a single building boom"
 g30_f8jjv874, Cape Breton NS - top 5 NS by listing inventory; "1960s and the 1980s" must stay two decades; detached only
-g30_dxfhegge, Lunenburg NS - top 5 NS by listing inventory; the municipal district, not the town of the same name (g30_dxfk2qef, same longId); "mainly mobile homes"; detached only, same as overall median
+g30_dxfhegge, Lunenburg NS - SHARED LONGID with the town (g30_dxfk2qef); page shows the town, expected to fail until fixed; top 5 NS by listing inventory; the municipal district; "mainly mobile homes"; detached only, same as overall median
 g30_f8550kb9, Colchester, Subd. B NS - top 5 NS by listing inventory; place name abbreviated ("Subd.") but original says "Subdivision"; detached and semi eligible
 g30_dxfmbxdn, Chester NS - top 5 NS by listing inventory; "the rest are mainly townhouses"; detached only
 g30_dxczy73w, Kings, Subd. A NS - medium NS; original misspells the name as "Kings Subdivision An"; four or more bedrooms listed first; detached only
@@ -94,3 +94,4 @@ g30_f84kdvzh, Amherst NS - medium NS; "1960s and the 2000s" must stay two decade
 g30_f84620s5, Parrsboro NS - rural NS; count 13, just above threshold; "homes are quite old"; detached only, same as overall median
 g30_dxc8w7f3, Lockeport NS - rural NS; count 9 (plain rewrite, no stats); "a majority of the housing growth occurred before the 1960s"
 g30_dxcqt30q, Annapolis Royal NS - rural NS; count 9 (plain rewrite, no stats); "evenly split between owners and renters"
+g30_f81ym5kb, Moncton NB - BOARD CATEGORY CODES (SAINTJOHN board): most homes have category 999 and most "detached" (103) listings are vacant land, so count and medians are wrong; SHARED LONGID with the parish (g30_f81yemc4), page shows the city but localLogicId[0] is the parish; largest NB city

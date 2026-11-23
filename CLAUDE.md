@@ -182,14 +182,23 @@ python scripts/parse_log.py <log_file>
 
 ## Model Configuration
 
-Current models (as of latest version):
-- `LIGHT_WEIGHT_LLM`: `gpt-4o` (for health checks and simple operations)
-- `LLM`: `gpt-4o` (for content rewriting)
+Current models (switched from `gpt-4o` and deployed to PROD 2026-10-14):
+- `LIGHT_WEIGHT_LLM`: `gpt-6-luna` (for health checks and simple operations)
+- `LLM`: `gpt-6-luna` (for content rewriting)
 
 Models are configured at the top of:
 - `realestate_content_transformer/data/pipeline.py`
 - `scripts/run_locallogic_content_rewriter.py`
-- `app/main.py`
+
+(`app/main.py` still has old model names; it is not maintained.)
+
+**Back-out to gpt-4o:** set both constants back to `'gpt-4o'` in those two files. No other
+change is needed: `raa` picks the API parameters by model name (`_is_legacy_model` /
+`_completion_params` in `raa/raa.py`). Keep this gpt-4o path until it is explicitly retired.
+Details and live-API gotchas are in `docs/dual_model_support_gpt4o_luna_v1.5.md`.
+
+The `openai` SDK on PROD is pinned at 0.27.2 (the legacy `ChatCompletion` path in `raa`).
+Do not upgrade it or other Python modules.
 
 ## FastAPI Application
 
@@ -206,6 +215,24 @@ Supported property types:
 - RENTAL
 
 These are validated in the archiver and processed sequentially by the main rewriter.
+
+Notes:
+- The code calls all six "property types", but only CONDO, SEMI-DETACHED and TOWNHOUSE are
+  building types. LUXURY and INVESTMENT are market segments, and RENTAL is a transaction type.
+- There is no DETACHED subpage. The site has no slot for one: the PROD overrides index
+  (`rlp_content_geo_overrides_current`) has `overrides_en` / `overrides_fr` for the city page and
+  `overrides_{condo,semi_detached,townhouse,luxury,investment,rental}_en` for the subpages.
+  DETACHED appears only in the city-page median-price breakdown (from `rlp_mkt_trends_current`).
+- Subpages are English only.
+- Rerun behaviour with `force_rewrite: false`: city pages are always rewritten. A subpage is
+  skipped if its stored version already equals the current `%Y%m` version string.
+
+## Evals and Docs
+
+- `evals/README.md`: rules for judging city-page output, plus how to run evals.
+- `evals/eval_geog_ids.txt`: the eval geographies (largest/medium/rural) per province, with notes.
+- `evals/run_timings.txt`: duration and API cost per PROD run, and the monthly cost ceiling.
+- `docs/`: vetted design notes and specs. Read them for answers, but do not edit them unless asked.
 
 ## Province Codes
 
